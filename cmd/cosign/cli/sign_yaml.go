@@ -16,6 +16,8 @@
 package cli
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto"
 	"encoding/base64"
@@ -174,7 +176,7 @@ func (c *SignYamlCommand) Exec(ctx context.Context, args []string) error {
 	}
 	pretty.Printf("\n%# v\n\n", m)
 	fmt.Println("signature:", base64.StdEncoding.EncodeToString(sig))
-	fmt.Println("cert", base64.StdEncoding.EncodeToString(pemBytes))
+	fmt.Println("cert", base64.StdEncoding.EncodeToString(gzipCompress(pemBytes)))
 	fmt.Println("keyRef", keyRef)
 	mMeta, ok := m["metadata"]
 	if !ok {
@@ -198,10 +200,10 @@ func (c *SignYamlCommand) Exec(ctx context.Context, args []string) error {
 	sigAnnoKey := cosign.IntegrityShieldAnnotationSignature
 	certAnnoKey := cosign.IntegrityShieldAnnotationCertificate
 	mAnnotationMap[sigAnnoKey] = base64.StdEncoding.EncodeToString(sig)
-	mAnnotationMap[msgAnnoKey] = base64.StdEncoding.EncodeToString(payloadYaml)
+	mAnnotationMap[msgAnnoKey] = base64.StdEncoding.EncodeToString(gzipCompress(payloadYaml))
 
 	if keyRef == "" {
-		mAnnotationMap[certAnnoKey] = base64.StdEncoding.EncodeToString(pemBytes)
+		mAnnotationMap[certAnnoKey] = base64.StdEncoding.EncodeToString(gzipCompress(pemBytes))
 	}
 	m["metadata"].(map[interface{}]interface{})["annotations"] = mAnnotationMap
 
@@ -245,4 +247,13 @@ func (c *SignYamlCommand) Exec(ctx context.Context, args []string) error {
 	}
 	fmt.Println("tlog entry created with index: ", index)
 	return nil
+}
+
+func gzipCompress(in []byte) []byte {
+	var buffer bytes.Buffer
+	writer := gzip.NewWriter(&buffer)
+	writer.Write(in)
+	writer.Close()
+	b := buffer.Bytes()
+	return b
 }

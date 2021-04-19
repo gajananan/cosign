@@ -16,6 +16,8 @@
 package cosign
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/base64"
 	"fmt"
@@ -94,6 +96,7 @@ func FetchYamlSignatures(ctx context.Context, payloadPath string) ([]SignedPaylo
 			fmt.Println("decode error:", err)
 			return nil, err
 		}
+		decoded = gzipDecompress(decoded)
 		fmt.Println("certPem", string(decoded))
 		certPem := string(decoded)
 
@@ -109,4 +112,15 @@ func FetchYamlSignatures(ctx context.Context, payloadPath string) ([]SignedPaylo
 	}
 
 	return signatures, nil
+}
+
+func gzipDecompress(in []byte) []byte {
+	buffer := bytes.NewBuffer(in)
+	reader, err := gzip.NewReader(buffer)
+	if err != nil {
+		return in
+	}
+	output := bytes.Buffer{}
+	output.ReadFrom(reader)
+	return output.Bytes()
 }
