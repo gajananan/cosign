@@ -22,34 +22,28 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"log"
+
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/gajananan/cosign/pkg/cosign/fulcio"
-	gyaml "github.com/ghodss/yaml"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
-	"github.com/kr/pretty"
+	"github.com/sigstore/cosign/pkg/cosign/fulcio"
+	"golang.org/x/term"
+
 	"github.com/peterbourgon/ff/v3/ffcli"
 	"github.com/pkg/errors"
+
+	"github.com/sigstore/cosign/pkg/cosign"
+	"github.com/sigstore/cosign/pkg/cosign/kms"
 	"github.com/sigstore/sigstore/pkg/signature"
 	sigPayload "github.com/sigstore/sigstore/pkg/signature/payload"
-	"golang.org/x/term"
-	"gopkg.in/yaml.v2"
-
-	"github.com/gajananan/cosign/pkg/cosign"
-	"github.com/gajananan/cosign/pkg/cosign/kms"
 )
 
 type annotationsMap struct {
 	annotations map[string]interface{}
-}
-
-type Annotation struct {
-	message string
 }
 
 func (a *annotationsMap) Set(s string) error {
@@ -86,7 +80,7 @@ func Sign() *ffcli.Command {
 	flagset.Var(&annotations, "a", "extra key=value pairs to sign")
 	return &ffcli.Command{
 		Name:       "sign",
-		ShortUsage: "cosign sign -key <key> [-payload <path>] [-a key=value] [-upload=true|false] [-f] <image uri> [-yaml=true|false]",
+		ShortUsage: "cosign sign -key <key> [-payload <path>] [-a key=value] [-upload=true|false] [-f] <image uri>",
 		ShortHelp:  `Sign the supplied container image.`,
 		LongHelp: `Sign the supplied container image.
 
@@ -105,25 +99,14 @@ EXAMPLES
 		FlagSet: flagset,
 		Exec: func(ctx context.Context, args []string) error {
 			// A key file (or kms address) is required unless we're in experimental mode!
-			if !cosign.Experimental() {
-				if *key == "" && *kmsVal == "" {
-					return &KeyParseError{}
-				}
-			}
 
-			if !cosign.Experimental() && len(args) == 0 {
+			if len(args) == 0 {
 				return flag.ErrHelp
 			}
 
-			if *payloadPath != "" {
-				if err := SignCmd(ctx, *key, "", *upload, *payloadPath, annotations.annotations, *kmsVal, GetPass, *force); err != nil {
-					return errors.Wrapf(err, "signing  YAML")
-				}
-			} else {
-				for _, img := range args {
-					if err := SignCmd(ctx, *key, img, *upload, *payloadPath, annotations.annotations, *kmsVal, GetPass, *force); err != nil {
-						return errors.Wrapf(err, "signing %s", img)
-					}
+			for _, img := range args {
+				if err := SignCmd(ctx, *key, img, *upload, *payloadPath, annotations.annotations, *kmsVal, GetPass, *force); err != nil {
+					return errors.Wrapf(err, "signing %s", img)
 				}
 			}
 			return nil
@@ -135,34 +118,25 @@ func SignCmd(ctx context.Context, keyPath string,
 	imageRef string, upload bool, payloadPath string,
 	annotations map[string]interface{}, kmsVal string, pf cosign.PassFunc, force bool) error {
 
-	var ref name.Reference
-	var err error
-	var get *remote.Descriptor
-	var img name.Digest
-	fmt.Println("payloadpath", payloadPath)
-	if payloadPath == "" {
-		if keyPath != "" && kmsVal != "" {
-			return &KeyParseError{}
-		}
-		ref, err = name.ParseReference(imageRef)
-		if err != nil {
-			return errors.Wrap(err, "parsing reference")
-		}
-		get, err = remote.Get(ref, remote.WithAuthFromKeychain(authn.DefaultKeychain))
-		if err != nil {
-			return errors.Wrap(err, "getting remote image")
-		}
-		repo := ref.Context()
-		img = repo.Digest(get.Digest.String())
+	if keyPath != "" && kmsVal != "" {
+		return &KeyParseError{}
 	}
+	ref, err := name.ParseReference(imageRef)
+	if err != nil {
+		return errors.Wrap(err, "parsing reference")
+	}
+	get, err := remote.Get(ref, remote.WithAuthFromKeychain(authn.DefaultKeychain))
+	if err != nil {
+		return errors.Wrap(err, "getting remote image")
+	}
+	repo := ref.Context()
+	img := repo.Digest(get.Digest.String())
 
 	// The payload can be specified via a flag to skip generation.
 	var payload []byte
-	var payloadYaml []byte
 	if payloadPath != "" {
 		fmt.Fprintln(os.Stderr, "Using payload from:", payloadPath)
-		payloadYaml, _ = ioutil.ReadFile(filepath.Clean(payloadPath))
-		payload, _ = gyaml.YAMLToJSON(payloadYaml)
+		payload, _ = ioutil.ReadFile(filepath.Clean(payloadPath))
 	} else {
 		payload, err = (&sigPayload.ImagePayload{
 			Type:   "cosign container image signature",
@@ -170,7 +144,7 @@ func SignCmd(ctx context.Context, keyPath string,
 			Claims: annotations,
 		}).MarshalJSON()
 	}
-	fmt.Println("payload when signing", string(payload))
+
 	if err != nil {
 		return errors.Wrap(err, "payload")
 	}
@@ -234,87 +208,15 @@ func SignCmd(ctx context.Context, keyPath string,
 		return nil
 	}
 
-	if payloadPath == "" {
-		// sha256:... -> sha256-...
-		dstRef, err := cosign.DestinationRef(ref, get)
-		if err != nil {
-			return err
-		}
-		fmt.Fprintln(os.Stderr, "Pushing signature to:", dstRef.String())
+	// sha256:... -> sha256-...
+	dstRef, err := cosign.DestinationRef(ref, get)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintln(os.Stderr, "Pushing signature to:", dstRef.String())
 
-		if err := cosign.Upload(sig, payload, dstRef, string(cert), string(chain)); err != nil {
-			return err
-		}
-
-	} else {
-
-		fmt.Println("----------------------")
-		fmt.Println("Yaml Signing Completed !!!")
-		fmt.Println("----------------------")
-		if keyPath == "" {
-			fmt.Println("Ceritificate Chain (issued and ca root):")
-			fmt.Println("......................................")
-
-			fmt.Println(chain, string(pemBytes))
-
-			fmt.Println("......................................")
-		}
-		m := make(map[interface{}]interface{})
-
-		err = yaml.Unmarshal([]byte(payloadYaml), &m)
-		if err != nil {
-			log.Fatalf("error: %v", err)
-		}
-
-		fmt.Println("signature:", base64.StdEncoding.EncodeToString(sig))
-
-		mMeta, ok := m["metadata"]
-		if !ok {
-			return fmt.Errorf("there is no `metadata` in this payload")
-		}
-		mMetaMap, ok := mMeta.(map[interface{}]interface{})
-		if !ok {
-			return fmt.Errorf("`metadata` in this payload is not a yaml object")
-		}
-		mAnnotation, ok := mMetaMap["annotations"]
-		if !ok {
-			return fmt.Errorf("there is no `metadata.annotations` in this payload")
-		}
-		mAnnotationMap, ok := mAnnotation.(map[interface{}]interface{})
-		if !ok {
-			return fmt.Errorf("`metadata.annotations` in this payload is not a yaml object")
-		}
-
-		//sign := make(map[interface{}]interface{})
-
-		msgAnnoKey := cosign.IntegrityShieldAnnotationMessage
-		sigAnnoKey := cosign.IntegrityShieldAnnotationSignature
-		certAnnoKey := cosign.IntegrityShieldAnnotationCertificate
-		mAnnotationMap[sigAnnoKey] = base64.StdEncoding.EncodeToString(sig)
-		mAnnotationMap[msgAnnoKey] = base64.StdEncoding.EncodeToString(payloadYaml)
-		if keyPath == "" {
-			mAnnotationMap[certAnnoKey] = base64.StdEncoding.EncodeToString(pemBytes)
-		}
-		m["metadata"].(map[interface{}]interface{})["annotations"] = mAnnotationMap
-
-		fmt.Println("......................................")
-		fmt.Println("")
-		fmt.Println("Signed yaml:")
-		fmt.Println("")
-		mapBytes, err := yaml.Marshal(m)
-
-		err = ioutil.WriteFile(filepath.Clean(payloadPath+".signed"), mapBytes, 0644)
-
-		out := make(map[interface{}]interface{})
-
-		signed, _ := ioutil.ReadFile(filepath.Clean(payloadPath + ".signed"))
-
-		err = yaml.Unmarshal(signed, &out)
-		if err != nil {
-			panic(err)
-		}
-		//fmt.Printf("--- m:\n%# v\n\n", m)
-		pretty.Printf("\n%# v\n\n", out)
+	if err := cosign.Upload(sig, payload, dstRef, string(cert), string(chain)); err != nil {
+		return err
 	}
 
 	if !cosign.Experimental() {
@@ -323,19 +225,19 @@ func SignCmd(ctx context.Context, keyPath string,
 
 	// Check if the image is public (no auth in Get)
 	if !force {
-		if payloadPath == "" {
-			if _, err := remote.Get(ref); err != nil {
-				fmt.Print("warning: uploading to the public transparency log for a private image, please confirm [Y/N]: ")
-				var response string
-				if _, err := fmt.Scanln(&response); err != nil {
-					return err
-				}
-				if response != "Y" {
-					fmt.Println("not uploading to transparency log")
-					return nil
-				}
+
+		if _, err := remote.Get(ref); err != nil {
+			fmt.Print("warning: uploading to the public transparency log for a private image, please confirm [Y/N]: ")
+			var response string
+			if _, err := fmt.Scanln(&response); err != nil {
+				return err
+			}
+			if response != "Y" {
+				fmt.Println("not uploading to transparency log")
+				return nil
 			}
 		}
+
 	}
 	index, err := cosign.UploadTLog(sig, payload, pemBytes)
 	if err != nil {

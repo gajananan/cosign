@@ -27,11 +27,11 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/gajananan/cosign/pkg/cosign"
-	"github.com/gajananan/cosign/pkg/cosign/fulcio"
-	"github.com/gajananan/cosign/pkg/cosign/kms"
 	"github.com/peterbourgon/ff/v3/ffcli"
 	"github.com/pkg/errors"
+	"github.com/sigstore/cosign/pkg/cosign"
+	"github.com/sigstore/cosign/pkg/cosign/fulcio"
+	"github.com/sigstore/cosign/pkg/cosign/kms"
 	"github.com/sigstore/rekor/cmd/rekor-cli/app"
 	"github.com/sigstore/sigstore/pkg/signature"
 )

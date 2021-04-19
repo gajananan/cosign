@@ -37,7 +37,7 @@ const (
 	ExperimentalEnv = "COSIGN_EXPERIMENTAL"
 	repoEnv         = "COSIGN_REPOSITORY"
 	ServerEnv       = "REKOR_SERVER"
-	rekorServer     = "https://api.rekor.dev" //"http://127.0.0.1:3000"
+	rekorServer     = "https://api.rekor.dev"
 )
 
 func Experimental() bool {

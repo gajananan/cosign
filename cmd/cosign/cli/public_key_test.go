@@ -20,7 +20,7 @@ import (
 	"crypto/rand"
 	"testing"
 
-	"github.com/gajananan/cosign/pkg/cosign"
+	"github.com/sigstore/cosign/pkg/cosign"
 )
 
 func pass(s string) cosign.PassFunc {

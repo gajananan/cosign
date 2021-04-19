@@ -21,9 +21,9 @@ import (
 	"io/ioutil"
 	"os"
 
-	"github.com/gajananan/cosign/pkg/cosign"
-	"github.com/gajananan/cosign/pkg/cosign/kms"
 	"github.com/pkg/errors"
+	"github.com/sigstore/cosign/pkg/cosign"
+	"github.com/sigstore/cosign/pkg/cosign/kms"
 
 	"github.com/peterbourgon/ff/v3/ffcli"
 	"golang.org/x/term"
