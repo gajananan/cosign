@@ -20,9 +20,9 @@ import (
 	"flag"
 	"fmt"
 
+	"github.com/gajananan/cosign/pkg/cosign"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/peterbourgon/ff/v3/ffcli"
-	"github.com/sigstore/cosign/pkg/cosign"
 )
 
 func Download() *ffcli.Command {

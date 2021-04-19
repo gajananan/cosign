@@ -20,9 +20,9 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/gajananan/cosign/cmd/cosign/cli"
 	"github.com/google/go-containerregistry/pkg/logs"
 	"github.com/peterbourgon/ff/v3/ffcli"
-	"github.com/sigstore/cosign/cmd/cosign/cli"
 )
 
 var (

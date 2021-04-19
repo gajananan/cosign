@@ -31,23 +31,28 @@ import (
 
 	"github.com/go-openapi/swag"
 	"github.com/google/go-containerregistry/pkg/name"
-
-	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/trillian/merkle/logverifier"
 	"github.com/google/trillian/merkle/rfc6962/hasher"
+	log "github.com/sirupsen/logrus"
+
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/pkg/errors"
 
-	"github.com/sigstore/rekor/cmd/cli/app"
+	"github.com/sigstore/rekor/cmd/rekor-cli/app"
 	"github.com/sigstore/rekor/pkg/generated/client"
 	"github.com/sigstore/rekor/pkg/generated/client/entries"
 	"github.com/sigstore/rekor/pkg/generated/models"
 	"github.com/sigstore/sigstore/pkg/signature"
 	"github.com/sigstore/sigstore/pkg/signature/payload"
 
-	"github.com/sigstore/cosign/pkg/cosign/kms"
+	"github.com/gajananan/cosign/pkg/cosign/kms"
 )
 
 const pubKeyPemType = "PUBLIC KEY"
+
+const IntegrityShieldAnnotationMessage = "integrityshield.io/message"
+const IntegrityShieldAnnotationSignature = "integrityshield.io/signature"
+const IntegrityShieldAnnotationCertificate = "integrityshield.io/certificate"
 
 type PublicKey interface {
 	signature.Verifier
@@ -103,7 +108,6 @@ func getTlogEntry(rekorClient *client.Rekor, uuid string) (*models.LogEntryAnon,
 }
 
 func FindTlogEntry(rekorClient *client.Rekor, b64Sig string, payload, pubKey []byte) (string, error) {
-	params := entries.NewGetLogEntryProofParams()
 	searchParams := entries.NewSearchLogQueryParams()
 	searchLogQuery := models.SearchLogQuery{}
 	signature, err := base64.StdEncoding.DecodeString(b64Sig)
@@ -116,8 +120,7 @@ func FindTlogEntry(rekorClient *client.Rekor, b64Sig string, payload, pubKey []b
 		Spec:       re.RekordObj,
 	}
 
-	entries := []models.ProposedEntry{entry}
-	searchLogQuery.SetEntries(entries)
+	searchLogQuery.SetEntries([]models.ProposedEntry{entry})
 
 	searchParams.SetEntry(&searchLogQuery)
 	resp, err := rekorClient.Entries.SearchLogQuery(searchParams)
@@ -134,25 +137,33 @@ func FindTlogEntry(rekorClient *client.Rekor, b64Sig string, payload, pubKey []b
 		return "", errors.New("UUID value can not be extracted")
 	}
 
+	log.Trace("logEntry", logEntry)
+
+	params := entries.NewGetLogEntryByUUIDParams()
 	for k := range logEntry {
 		params.EntryUUID = k
 	}
-	lep, err := rekorClient.Entries.GetLogEntryProof(params)
+	lep, err := rekorClient.Entries.GetLogEntryByUUID(params)
 	if err != nil {
 		return "", err
 	}
 
+	if len(lep.Payload) != 1 {
+		return "", errors.New("UUID value can not be extracted")
+	}
+	e := lep.Payload[params.EntryUUID]
+
 	hashes := [][]byte{}
-	for _, h := range lep.Payload.Hashes {
+	for _, h := range e.InclusionProof.Hashes {
 		hb, _ := hex.DecodeString(h)
 		hashes = append(hashes, hb)
 	}
 
-	rootHash, _ := hex.DecodeString(*lep.Payload.RootHash)
+	rootHash, _ := hex.DecodeString(*e.InclusionProof.RootHash)
 	leafHash, _ := hex.DecodeString(params.EntryUUID)
 
 	v := logverifier.New(hasher.DefaultHasher)
-	if err := v.VerifyInclusionProof(*lep.Payload.LogIndex, *lep.Payload.TreeSize, hashes, rootHash, leafHash); err != nil {
+	if err := v.VerifyInclusionProof(*e.InclusionProof.LogIndex, *e.InclusionProof.TreeSize, hashes, rootHash, leafHash); err != nil {
 		return "", errors.Wrap(err, "verifying inclusion proof")
 	}
 	return params.EntryUUID, nil
@@ -169,7 +180,7 @@ type CheckOpts struct {
 
 // Verify does all the main cosign checks in a loop, returning validated payloads.
 // If there were no payloads, we return an error.
-func Verify(ctx context.Context, ref name.Reference, co CheckOpts) ([]SignedPayload, error) {
+func Verify(ctx context.Context, ref name.Reference, co CheckOpts, payloadPath string) ([]SignedPayload, error) {
 	// Enforce this up front.
 	if co.Roots == nil && co.PubKey == nil {
 		return nil, errors.New("one of public key or cert roots is required")
@@ -180,78 +191,117 @@ func Verify(ctx context.Context, ref name.Reference, co CheckOpts) ([]SignedPayl
 		return nil, err
 	}
 
-	// These are all the signatures attached to our image that we know how to parse.
-	allSignatures, desc, err := FetchSignatures(ctx, ref)
-	if err != nil {
-		return nil, errors.Wrap(err, "fetching signatures")
+	var desc *v1.Descriptor
+	var allSignatures []SignedPayload
+	if payloadPath != "" {
+		// These are all the signatures attached to our image that we know how to parse.
+		allSignatures, err = FetchSignaturesYaml(ctx, payloadPath)
+		if err != nil {
+			return nil, errors.Wrap(err, "fetching signatures")
+		}
+		//log.Trace(allSignatures)
+	} else {
+		// These are all the signatures attached to our image that we know how to parse.
+		allSignatures, desc, err = FetchSignatures(ctx, ref)
+		if err != nil {
+			return nil, errors.Wrap(err, "fetching signatures")
+		}
 	}
-
+	log.Trace("desc", desc)
 	validationErrs := []string{}
 	checkedSignatures := []SignedPayload{}
+	log.Trace("allSignatures", len(allSignatures))
+	log.Trace("co.Tlog", co.Tlog)
 	for _, sp := range allSignatures {
+		log.Trace("--------------------------------------- loop start")
+		log.Trace("co.Tlog", co.Tlog)
+		//log.Trace("co.PubKey", co.PubKey, co.Roots, co.Tlog, co.Claims)
+		log.Trace("Going to check PubKey/Roots")
+		if co.PubKey != nil {
+			log.Trace("co.PubKey is not nill")
+		}
+		if co.Roots != nil {
+			log.Trace("co.Roots is not nill")
+		}
 		switch {
+
 		// We have a public key to check against.
 		case co.PubKey != nil:
 			if err := sp.VerifyKey(ctx, co.PubKey); err != nil {
+				log.Trace("Pubkey error err", err)
 				validationErrs = append(validationErrs, err.Error())
 				continue
 			}
+
 		// If we don't have a public key to check against, we can try a root cert.
 		case co.Roots != nil:
 			// There might be signatures with a public key instead of a cert, though
 			if sp.Cert == nil {
+				log.Trace("no certificate found on signature", err)
 				validationErrs = append(validationErrs, "no certificate found on signature")
 				continue
 			}
+			log.Trace("sp.Cert.PublicKey.(*ecdsa.PublicKey)", sp.Cert.PublicKey.(*ecdsa.PublicKey))
 			pub := &signature.ECDSAVerifier{Key: sp.Cert.PublicKey.(*ecdsa.PublicKey), HashAlg: crypto.SHA256}
+			log.Trace("pub", pub)
 			// Now verify the signature, then the cert.
 			if err := sp.VerifyKey(ctx, pub); err != nil {
+				log.Trace("VerifyKey error", err)
 				validationErrs = append(validationErrs, err.Error())
 				continue
 			}
 			if err := sp.TrustedCert(co.Roots); err != nil {
+				log.Trace("TrustedCert erro", err)
 				validationErrs = append(validationErrs, err.Error())
 				continue
 			}
 		}
-
+		log.Trace("Going to check Claims")
 		// We can't check annotations without claims, both require unmarshalling the payload.
-		if co.Claims {
-			ss := &payload.Simple{}
-			if err := json.Unmarshal(sp.Payload, ss); err != nil {
-				validationErrs = append(validationErrs, err.Error())
-				continue
-			}
-
-			if err := sp.VerifyClaims(desc, ss); err != nil {
-				validationErrs = append(validationErrs, err.Error())
-				continue
-			}
-
-			if co.Annotations != nil {
-				if !correctAnnotations(co.Annotations, ss.Optional) {
-					validationErrs = append(validationErrs, "missing or incorrect annotation")
+		if payloadPath == "" {
+			if co.Claims {
+				ss := &payload.Simple{}
+				if err := json.Unmarshal(sp.Payload, ss); err != nil {
+					validationErrs = append(validationErrs, err.Error())
 					continue
+				}
+
+				if err := sp.VerifyClaims(desc, ss); err != nil {
+					validationErrs = append(validationErrs, err.Error())
+					continue
+				}
+
+				if co.Annotations != nil {
+					if !correctAnnotations(co.Annotations, ss.Optional) {
+						validationErrs = append(validationErrs, "missing or incorrect annotation")
+						continue
+					}
 				}
 			}
 		}
 
+		log.Trace("Going to check tlog")
 		if co.Tlog {
 			// Get the right public key to use (key or cert)
 			var pemBytes []byte
 			if co.PubKey != nil {
+				log.Trace("co.PubKey is not nil")
 				pemBytes, err = PublicKeyPem(ctx, co.PubKey)
 				if err != nil {
 					validationErrs = append(validationErrs, err.Error())
 					continue
 				}
 			} else {
+				log.Trace("loading sp.Cert")
 				pemBytes = CertToPem(sp.Cert)
 			}
+
+			log.Trace("sp.Cert", sp.Cert)
 			// Find the uuid then the entry.
 			uuid, err := sp.VerifyTlog(rekorClient, pemBytes)
 			if err != nil {
 				validationErrs = append(validationErrs, err.Error())
+				log.Trace("[DEBUG] error1", err.Error())
 				continue
 			}
 			// if we have a cert, we should check expiry
@@ -259,11 +309,13 @@ func Verify(ctx context.Context, ref name.Reference, co CheckOpts) ([]SignedPayl
 				e, err := getTlogEntry(rekorClient, uuid)
 				if err != nil {
 					validationErrs = append(validationErrs, err.Error())
+					log.Trace("[DEBUG] error2", err.Error())
 					continue
 				}
 				// Expiry check is only enabled with Tlog support
 				if err := checkExpiry(sp.Cert, time.Unix(e.IntegratedTime, 0)); err != nil {
 					validationErrs = append(validationErrs, err.Error())
+					log.Trace("[DEBUG] error3", err.Error())
 					continue
 				}
 			}
@@ -297,6 +349,7 @@ func (sp *SignedPayload) VerifyKey(ctx context.Context, pubKey PublicKey) error 
 	if err != nil {
 		return err
 	}
+	log.Trace("sp.Payload", string(sp.Payload))
 	return pubKey.Verify(ctx, sp.Payload, signature)
 }
 

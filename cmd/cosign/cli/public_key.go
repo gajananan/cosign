@@ -23,8 +23,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/sigstore/cosign/pkg/cosign"
-	"github.com/sigstore/cosign/pkg/cosign/kms"
+	"github.com/gajananan/cosign/pkg/cosign"
+	"github.com/gajananan/cosign/pkg/cosign/kms"
 
 	"github.com/peterbourgon/ff/v3/ffcli"
 )

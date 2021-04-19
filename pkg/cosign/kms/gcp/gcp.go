@@ -195,7 +195,7 @@ func (g *KMS) keyVersionName(ctx context.Context) (string, error) {
 	return name, nil
 }
 
-func (g *KMS) CreateKey(ctx context.Context) (*ecdsa.PublicKey, error) {
+func (g *KMS) CreateKey(ctx context.Context) (crypto.PublicKey, error) {
 	if err := g.createKeyRing(ctx); err != nil {
 		return nil, errors.Wrap(err, "creating key ring")
 	}
