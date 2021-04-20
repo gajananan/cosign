@@ -25,13 +25,13 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/gajananan/cosign/pkg/cosign"
-	"github.com/gajananan/cosign/pkg/cosign/fulcio"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/sigstore/cosign/pkg/cosign"
+	"github.com/sigstore/cosign/pkg/cosign/fulcio"
 
 	"github.com/open-policy-agent/opa/ast"
 	"github.com/open-policy-agent/opa/cmd"
@@ -179,7 +179,7 @@ func main() {
 				Claims: true,
 				Roots:  fulcio.Roots,
 			}
-			sps, err := cosign.Verify(context.Background(), ref, co, "")
+			sps, err := cosign.Verify(context.Background(), ref, co)
 			if err != nil {
 				return nil, err
 			}

@@ -20,7 +20,7 @@ import (
 	"bytes"
 	"fmt"
 
-	"github.com/gajananan/cosign/cmd/cosign/cli"
+	"github.com/sigstore/cosign/cmd/cosign/cli"
 )
 
 func FuzzGetPassword(data []byte) int {

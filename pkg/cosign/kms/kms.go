@@ -19,7 +19,7 @@ import (
 	"crypto"
 	"fmt"
 
-	"github.com/gajananan/cosign/pkg/cosign/kms/gcp"
+	"github.com/sigstore/cosign/pkg/cosign/kms/gcp"
 	"github.com/sigstore/sigstore/pkg/signature"
 )
 
@@ -30,8 +30,6 @@ type KMS interface {
 	// CreateKey is responsible for creating an asymmetric key pair
 	// with the ECDSA algorithm on the P-256 Curve with a SHA-256 digest
 	CreateKey(context.Context) (crypto.PublicKey, error)
-
-	PublicKey(context.Context) (crypto.PublicKey, error)
 }
 
 func Get(ctx context.Context, keyResourceID string) (KMS, error) {

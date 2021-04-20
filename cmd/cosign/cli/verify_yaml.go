@@ -1,10 +1,11 @@
-// Copyright 2021 The Rekor Authors
+//
+// Copyright 2021 The Sigstore Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -21,7 +22,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/peterbourgon/ff/v3/ffcli"
 	"github.com/pkg/errors"
 
@@ -31,66 +31,64 @@ import (
 )
 
 // VerifyCommand verifies a signature on a supplied container image
-type VerifyCommand struct {
+type VerifyYamlCommand struct {
 	CheckClaims bool
+	KeyRef      string
 	KmsVal      string
-	Key         string
 	Output      string
 	Annotations *map[string]interface{}
 	PayloadPath string
+	Yaml        bool
 }
 
 // Verify builds and returns an ffcli command
-func Verify() *ffcli.Command {
-	cmd := VerifyCommand{}
-	flagset := flag.NewFlagSet("cosign verify", flag.ExitOnError)
+func VerifyYaml() *ffcli.Command {
+	cmd := VerifyYamlCommand{}
+	flagset := flag.NewFlagSet("cosign verify-yaml", flag.ExitOnError)
 	annotations := annotationsMap{}
 
-	flagset.StringVar(&cmd.Key, "key", "", "path to the public key")
-	flagset.StringVar(&cmd.KmsVal, "kms", "", "verify via a public key stored in a KMS")
+	flagset.StringVar(&cmd.KeyRef, "key", "", "path to the public key file, URL, or KMS URI")
+	flagset.StringVar(&cmd.KmsVal, "kms", "", "sign via a private key stored in a KMS")
 	flagset.BoolVar(&cmd.CheckClaims, "check-claims", true, "whether to check the claims found")
 	flagset.StringVar(&cmd.Output, "output", "json", "output the signing image information. Default JSON.")
+	flagset.StringVar(&cmd.PayloadPath, "payload", "", "path to the yaml file")
+	flagset.BoolVar(&cmd.Yaml, "yaml", true, "if it is yaml file")
 	// parse annotations
 	flagset.Var(&annotations, "a", "extra key=value pairs to sign")
 	cmd.Annotations = &annotations.annotations
 
 	return &ffcli.Command{
-		Name:       "verify",
-		ShortUsage: "cosign verify -key <key>|-kms <kms> <image uri>",
-		ShortHelp:  "Verify a signature on the supplied container image",
-		LongHelp: `Verify signature and annotations on an image by checking the claims
+		Name:       "verify-yaml",
+		ShortUsage: "cosign verify-yaml -key <key path>|<key url>|<kms uri> <signed yaml file>",
+		ShortHelp:  "Verify a signature on the supplied yaml file",
+		LongHelp: `Verify signature and annotations on the supplied yaml file by checking the claims
 against the transparency log.
 
 EXAMPLES
-  # verify cosign claims and signing certificates on the image
-  cosign verify <IMAGE>
+  # verify cosign claims and signing certificates on the yaml file
+  cosign verify-yaml -payload <signed yaml file>
 
   # additionally verify specified annotations
-  cosign verify -a key1=val1 -a key2=val2 <IMAGE>
+  cosign verify-yaml -a key1=val1 -a key2=val2 -payload <signed yaml file> 
 
   # (experimental) additionally, verify with the transparency log
-  COSIGN_EXPERIMENTAL=1 cosign verify <IMAGE>
+  COSIGN_EXPERIMENTAL=1 cosign verify-yaml -payload <signed yaml file>
 
   # verify image with public key
-  cosign verify -key <FILE> <IMAGE>
+  cosign verify-yaml -key <FILE> -payload <signed yaml file>
+
+  # verify image with public key provided by URL
+  cosign verify-yaml -key https://host.for/<FILE> -payload <signed yaml file>
 
   # verify image with public key stored in Google Cloud KMS
-  cosign verify -kms  gcpkms://projects/<PROJECT>/locations/global/keyRings/<KEYRING>/cryptoKeys/<KEY> <IMAGE>`,
+  cosign verify-yaml -key gcpkms://projects/<PROJECT>/locations/global/keyRings/<KEYRING>/cryptoKeys/<KEY> -payload <signed yaml file>`,
 		FlagSet: flagset,
 		Exec:    cmd.Exec,
 	}
 }
 
 // Exec runs the verification command
-func (c *VerifyCommand) Exec(ctx context.Context, args []string) error {
-
-	if len(args) == 0 {
-		return flag.ErrHelp
-	}
-
-	if c.Key != "" && c.KmsVal != "" {
-		return &KeyParseError{}
-	}
+func (c *VerifyYamlCommand) Exec(ctx context.Context, args []string) error {
 
 	co := cosign.CheckOpts{
 		Annotations: *c.Annotations,
@@ -98,7 +96,8 @@ func (c *VerifyCommand) Exec(ctx context.Context, args []string) error {
 		Tlog:        cosign.Experimental(),
 		Roots:       fulcio.Roots,
 	}
-	pubKeyDescriptor := c.Key
+
+	pubKeyDescriptor := c.KeyRef
 	if c.KmsVal != "" {
 		pubKeyDescriptor = c.KmsVal
 	}
@@ -110,27 +109,18 @@ func (c *VerifyCommand) Exec(ctx context.Context, args []string) error {
 		}
 		co.PubKey = pubKey
 	}
-
-	for _, imageRef := range args {
-		ref, err := name.ParseReference(imageRef)
-		if err != nil {
-			return err
-		}
-		fmt.Println("ref: ", ref)
-
-		verified, err := cosign.Verify(ctx, ref, co)
-		if err != nil {
-			return err
-		}
-
-		c.printVerification(imageRef, verified, co)
+	verified, err := cosign.VerifyYaml(ctx, co, c.PayloadPath)
+	if err != nil {
+		return err
 	}
+
+	c.printVerification("", verified, co)
 
 	return nil
 }
 
 // printVerification logs details about the verification to stdout
-func (c *VerifyCommand) printVerification(imgRef string, verified []cosign.SignedPayload, co cosign.CheckOpts) {
+func (c *VerifyYamlCommand) printVerification(imgRef string, verified []cosign.SignedPayload, co cosign.CheckOpts) {
 	fmt.Fprintf(os.Stderr, "\nVerification for %s --\n", imgRef)
 	fmt.Fprintln(os.Stderr, "The following checks were performed on each of these signatures:")
 	if co.Claims {
@@ -156,7 +146,6 @@ func (c *VerifyCommand) printVerification(imgRef string, verified []cosign.Signe
 			}
 
 			fmt.Println(string(vp.Payload))
-
 		}
 	default:
 		var outputKeys []payload.Simple

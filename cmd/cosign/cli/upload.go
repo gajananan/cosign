@@ -23,11 +23,11 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/gajananan/cosign/pkg/cosign"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/peterbourgon/ff/v3/ffcli"
+	"github.com/sigstore/cosign/pkg/cosign"
 	sigPayload "github.com/sigstore/sigstore/pkg/signature/payload"
 )
 

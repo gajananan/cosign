@@ -29,7 +29,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/gajananan/cosign/pkg/cosign"
+	"github.com/sigstore/cosign/pkg/cosign"
 	"github.com/sigstore/sigstore/pkg/signature/payload"
 
 	"github.com/google/go-cmp/cmp"
@@ -37,9 +37,9 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/registry"
 
-	"github.com/gajananan/cosign/cmd/cosign/cli"
 	"github.com/google/go-containerregistry/pkg/v1/random"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/sigstore/cosign/cmd/cosign/cli"
 )
 
 var keyPass = []byte("hello")

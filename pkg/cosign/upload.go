@@ -37,7 +37,7 @@ const (
 	ExperimentalEnv = "COSIGN_EXPERIMENTAL"
 	repoEnv         = "COSIGN_REPOSITORY"
 	ServerEnv       = "REKOR_SERVER"
-	rekorServer     = "https://api.rekor.dev" //"http://127.0.0.1:3000"
+	rekorServer     = "https://api.rekor.dev"
 )
 
 func Experimental() bool {
@@ -74,13 +74,6 @@ func UploadTLog(signature, payload []byte, pemBytes []byte) (string, error) {
 	if err != nil {
 		return "", err
 	}
-
-	fmt.Println("payload", payload)
-	fmt.Println("payload", base64.StdEncoding.EncodeToString(payload))
-	fmt.Println("signature", signature)
-	fmt.Println("signature", base64.StdEncoding.EncodeToString(signature))
-	fmt.Println("pemBytes", pemBytes)
-	fmt.Println("pemBytes", base64.StdEncoding.EncodeToString(pemBytes))
 
 	re := rekorEntry(payload, signature, pemBytes)
 	returnVal := models.Rekord{
