@@ -16,6 +16,8 @@
 package cli
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto"
 	"encoding/base64"
@@ -159,7 +161,6 @@ func (c *SignYamlCommand) Exec(ctx context.Context, args []string) error {
 	if err != nil {
 		fmt.Errorf("error: %v", err)
 	}
-
 	mMeta, ok := m["metadata"]
 	if !ok {
 		return fmt.Errorf("there is no `metadata` in this payload")
@@ -181,10 +182,10 @@ func (c *SignYamlCommand) Exec(ctx context.Context, args []string) error {
 	sigAnnoKey := cosign.IntegrityShieldAnnotationSignature
 	certAnnoKey := cosign.IntegrityShieldAnnotationCertificate
 	mAnnotationMap[sigAnnoKey] = base64.StdEncoding.EncodeToString(sig)
-	mAnnotationMap[msgAnnoKey] = base64.StdEncoding.EncodeToString(payloadYaml)
+	mAnnotationMap[msgAnnoKey] = base64.StdEncoding.EncodeToString(gzipCompress(payloadYaml))
 
 	if keyRef == "" {
-		mAnnotationMap[certAnnoKey] = base64.StdEncoding.EncodeToString(pemBytes)
+		mAnnotationMap[certAnnoKey] = base64.StdEncoding.EncodeToString(gzipCompress(pemBytes))
 	}
 	m["metadata"].(map[interface{}]interface{})["annotations"] = mAnnotationMap
 
@@ -222,4 +223,13 @@ func (c *SignYamlCommand) Exec(ctx context.Context, args []string) error {
 	}
 	fmt.Println("tlog entry created with index: ", index)
 	return nil
+}
+
+func gzipCompress(in []byte) []byte {
+	var buffer bytes.Buffer
+	writer := gzip.NewWriter(&buffer)
+	writer.Write(in)
+	writer.Close()
+	b := buffer.Bytes()
+	return b
 }
