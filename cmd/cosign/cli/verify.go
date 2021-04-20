@@ -118,7 +118,7 @@ func (c *VerifyCommand) Exec(ctx context.Context, args []string) error {
 		}
 		fmt.Println("ref: ", ref)
 
-		verified, err := cosign.Verify(ctx, ref, co, "")
+		verified, err := cosign.Verify(ctx, ref, co)
 		if err != nil {
 			return err
 		}

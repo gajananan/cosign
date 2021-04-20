@@ -173,7 +173,7 @@ type CheckOpts struct {
 
 // Verify does all the main cosign checks in a loop, returning validated payloads.
 // If there were no payloads, we return an error.
-func Verify(ctx context.Context, ref name.Reference, co CheckOpts, payloadPath string) ([]SignedPayload, error) {
+func Verify(ctx context.Context, ref name.Reference, co CheckOpts) ([]SignedPayload, error) {
 	// Enforce this up front.
 	if co.Roots == nil && co.PubKey == nil {
 		return nil, errors.New("one of public key or cert roots is required")
