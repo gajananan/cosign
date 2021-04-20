@@ -75,13 +75,6 @@ func UploadTLog(signature, payload []byte, pemBytes []byte) (string, error) {
 		return "", err
 	}
 
-	fmt.Println("payload", payload)
-	fmt.Println("payload", base64.StdEncoding.EncodeToString(payload))
-	fmt.Println("signature", signature)
-	fmt.Println("signature", base64.StdEncoding.EncodeToString(signature))
-	fmt.Println("pemBytes", pemBytes)
-	fmt.Println("pemBytes", base64.StdEncoding.EncodeToString(pemBytes))
-
 	re := rekorEntry(payload, signature, pemBytes)
 	returnVal := models.Rekord{
 		APIVersion: swag.String(re.APIVersion()),

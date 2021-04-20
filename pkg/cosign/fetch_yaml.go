@@ -20,7 +20,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io/ioutil"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -35,7 +34,6 @@ func FetchYamlSignatures(ctx context.Context, payloadPath string) ([]SignedPaylo
 	signatures := make([]SignedPayload, 1)
 	if payloadPath != "" {
 
-		fmt.Fprintln(os.Stderr, "Using payload from:", payloadPath)
 		payload, err = ioutil.ReadFile(filepath.Clean(payloadPath))
 		m := make(map[interface{}]interface{})
 
@@ -63,24 +61,14 @@ func FetchYamlSignatures(ctx context.Context, payloadPath string) ([]SignedPaylo
 			return nil, fmt.Errorf("`metadata.annotations` in this payload is not a yaml object")
 		}
 
-		msgAnnoKey := IntegrityShieldAnnotationMessage
+		//msgAnnoKey := IntegrityShieldAnnotationMessage
 		sigAnnoKey := IntegrityShieldAnnotationSignature
 		certAnnoKey := IntegrityShieldAnnotationCertificate
-		fmt.Println("----------")
-		//log.Trace("payload json m", m)
-		fmt.Println("cert:", mAnnotationMap[certAnnoKey])
-		fmt.Println("msg:", mAnnotationMap[msgAnnoKey])
-		fmt.Println("sig:", mAnnotationMap[sigAnnoKey])
-		fmt.Println("----------")
 
-		fmt.Println("payloadPath", payloadPath)
 		payloadOrigPath := strings.TrimRight(payloadPath, ".signed")
-		fmt.Println("payloadOrigPath", payloadOrigPath)
 		payloadOrigYaml, err := ioutil.ReadFile(filepath.Clean(payloadOrigPath))
 		payloadOrig, _ := gyaml.YAMLToJSON(payloadOrigYaml)
 		base64sig := fmt.Sprint(mAnnotationMap[sigAnnoKey])
-		fmt.Println("payloadOrig", string(payloadOrig))
-		fmt.Println("--------------base64sig", base64sig)
 
 		sp := SignedPayload{
 			Payload:         payloadOrig,
@@ -94,7 +82,7 @@ func FetchYamlSignatures(ctx context.Context, payloadPath string) ([]SignedPaylo
 			fmt.Println("decode error:", err)
 			return nil, err
 		}
-		fmt.Println("certPem", string(decoded))
+
 		certPem := string(decoded)
 
 		if certPem != "" {

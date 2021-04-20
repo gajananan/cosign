@@ -59,29 +59,29 @@ func VerifyYaml() *ffcli.Command {
 
 	return &ffcli.Command{
 		Name:       "verify-yaml",
-		ShortUsage: "cosign verify-yaml -key <key path>|<key url>|<kms uri> <image uri> [-yaml=true|false]",
+		ShortUsage: "cosign verify-yaml -key <key path>|<key url>|<kms uri> <signed yaml file>",
 		ShortHelp:  "Verify a signature on the supplied yaml file",
 		LongHelp: `Verify signature and annotations on the supplied yaml file by checking the claims
 against the transparency log.
 
 EXAMPLES
   # verify cosign claims and signing certificates on the yaml file
-  cosign verify-yaml -payload <yaml file> -yaml true
+  cosign verify-yaml -payload <signed yaml file>
 
   # additionally verify specified annotations
-  cosign verify-yaml -a key1=val1 -a key2=val2 -payload <yaml file> -yaml true
+  cosign verify-yaml -a key1=val1 -a key2=val2 -payload <signed yaml file> 
 
   # (experimental) additionally, verify with the transparency log
-  COSIGN_EXPERIMENTAL=1 cosign verify-yaml -payload <yaml file> -yaml true
+  COSIGN_EXPERIMENTAL=1 cosign verify-yaml -payload <signed yaml file>
 
   # verify image with public key
-  cosign verify-yaml -key <FILE> -payload <yaml file> -yaml true
+  cosign verify-yaml -key <FILE> -payload <signed yaml file>
 
   # verify image with public key provided by URL
-  cosign verify-yaml -key https://host.for/<FILE> -payload <yaml file> -yaml true
+  cosign verify-yaml -key https://host.for/<FILE> -payload <signed yaml file>
 
   # verify image with public key stored in Google Cloud KMS
-  cosign verify-yaml -key gcpkms://projects/<PROJECT>/locations/global/keyRings/<KEYRING>/cryptoKeys/<KEY> -payload <yaml file> -yaml true`,
+  cosign verify-yaml -key gcpkms://projects/<PROJECT>/locations/global/keyRings/<KEYRING>/cryptoKeys/<KEY> -payload <signed yaml file>`,
 		FlagSet: flagset,
 		Exec:    cmd.Exec,
 	}
@@ -89,9 +89,6 @@ EXAMPLES
 
 // Exec runs the verification command
 func (c *VerifyYamlCommand) Exec(ctx context.Context, args []string) error {
-	if len(args) == 0 {
-		return flag.ErrHelp
-	}
 
 	co := cosign.CheckOpts{
 		Annotations: *c.Annotations,
@@ -116,7 +113,7 @@ func (c *VerifyYamlCommand) Exec(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println("Verified", verified)
+
 	c.printVerification("", verified, co)
 
 	return nil
