@@ -34,6 +34,7 @@ import (
 type VerifyYamlCommand struct {
 	CheckClaims bool
 	KeyRef      string
+	KmsVal      string
 	Output      string
 	Annotations *map[string]interface{}
 	PayloadPath string
@@ -47,6 +48,7 @@ func VerifyYaml() *ffcli.Command {
 	annotations := annotationsMap{}
 
 	flagset.StringVar(&cmd.KeyRef, "key", "", "path to the public key file, URL, or KMS URI")
+	flagset.StringVar(&cmd.KmsVal, "kms", "", "sign via a private key stored in a KMS")
 	flagset.BoolVar(&cmd.CheckClaims, "check-claims", true, "whether to check the claims found")
 	flagset.StringVar(&cmd.Output, "output", "json", "output the signing image information. Default JSON.")
 	flagset.StringVar(&cmd.PayloadPath, "payload", "", "path to the yaml file")
@@ -57,29 +59,29 @@ func VerifyYaml() *ffcli.Command {
 
 	return &ffcli.Command{
 		Name:       "verify-yaml",
-		ShortUsage: "cosign verify-yaml -key <key path>|<key url>|<kms uri> <image uri> [-yaml=true|false]",
+		ShortUsage: "cosign verify-yaml -key <key path>|<key url>|<kms uri> <signed yaml file>",
 		ShortHelp:  "Verify a signature on the supplied yaml file",
 		LongHelp: `Verify signature and annotations on the supplied yaml file by checking the claims
 against the transparency log.
 
 EXAMPLES
   # verify cosign claims and signing certificates on the yaml file
-  cosign verify-yaml -payload <yaml file> -yaml true
+  cosign verify-yaml -payload <signed yaml file>
 
   # additionally verify specified annotations
-  cosign verify-yaml -a key1=val1 -a key2=val2 -payload <yaml file> -yaml true
+  cosign verify-yaml -a key1=val1 -a key2=val2 -payload <signed yaml file> 
 
   # (experimental) additionally, verify with the transparency log
-  COSIGN_EXPERIMENTAL=1 cosign verify-yaml -payload <yaml file> -yaml true
+  COSIGN_EXPERIMENTAL=1 cosign verify-yaml -payload <signed yaml file>
 
   # verify image with public key
-  cosign verify-yaml -key <FILE> -payload <yaml file> -yaml true
+  cosign verify-yaml -key <FILE> -payload <signed yaml file>
 
   # verify image with public key provided by URL
-  cosign verify-yaml -key https://host.for/<FILE> -payload <yaml file> -yaml true
+  cosign verify-yaml -key https://host.for/<FILE> -payload <signed yaml file>
 
   # verify image with public key stored in Google Cloud KMS
-  cosign verify-yaml -key gcpkms://projects/<PROJECT>/locations/global/keyRings/<KEYRING>/cryptoKeys/<KEY> -payload <yaml file> -yaml true`,
+  cosign verify-yaml -key gcpkms://projects/<PROJECT>/locations/global/keyRings/<KEYRING>/cryptoKeys/<KEY> -payload <signed yaml file>`,
 		FlagSet: flagset,
 		Exec:    cmd.Exec,
 	}
@@ -87,9 +89,6 @@ EXAMPLES
 
 // Exec runs the verification command
 func (c *VerifyYamlCommand) Exec(ctx context.Context, args []string) error {
-	if len(args) == 0 {
-		return flag.ErrHelp
-	}
 
 	co := cosign.CheckOpts{
 		Annotations: *c.Annotations,
@@ -97,22 +96,24 @@ func (c *VerifyYamlCommand) Exec(ctx context.Context, args []string) error {
 		Tlog:        cosign.Experimental(),
 		Roots:       fulcio.Roots,
 	}
-	keyRef := c.KeyRef
 
+	pubKeyDescriptor := c.KeyRef
+	if c.KmsVal != "" {
+		pubKeyDescriptor = c.KmsVal
+	}
 	// Keys are optional!
-	if keyRef != "" {
-		pubKey, err := publicKeyFromKeyRef(ctx, keyRef)
+	if pubKeyDescriptor != "" {
+		pubKey, err := cosign.LoadPublicKey(ctx, pubKeyDescriptor)
 		if err != nil {
 			return errors.Wrap(err, "loading public key")
 		}
 		co.PubKey = pubKey
 	}
-
 	verified, err := cosign.VerifyYaml(ctx, co, c.PayloadPath)
 	if err != nil {
 		return err
 	}
-	fmt.Println("Verified", verified)
+
 	c.printVerification("", verified, co)
 
 	return nil
