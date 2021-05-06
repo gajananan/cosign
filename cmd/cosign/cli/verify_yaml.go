@@ -97,13 +97,13 @@ func (c *VerifyYamlCommand) Exec(ctx context.Context, args []string) error {
 		Roots:       fulcio.Roots,
 	}
 
-	pubKeyDescriptor := c.KeyRef
+	keyRef := c.KeyRef
 	if c.KmsVal != "" {
-		pubKeyDescriptor = c.KmsVal
+		keyRef = c.KmsVal
 	}
 	// Keys are optional!
-	if pubKeyDescriptor != "" {
-		pubKey, err := cosign.LoadPublicKey(ctx, pubKeyDescriptor)
+	if keyRef != "" {
+		pubKey, err := publicKeyFromKeyRef(ctx, keyRef)
 		if err != nil {
 			return errors.Wrap(err, "loading public key")
 		}
@@ -121,7 +121,7 @@ func (c *VerifyYamlCommand) Exec(ctx context.Context, args []string) error {
 
 // printVerification logs details about the verification to stdout
 func (c *VerifyYamlCommand) printVerification(imgRef string, verified []cosign.SignedPayload, co cosign.CheckOpts) {
-	fmt.Fprintf(os.Stderr, "\nVerification for %s --\n", imgRef)
+	fmt.Fprintf(os.Stderr, "\nVerification for %s --\n", c.PayloadPath)
 	fmt.Fprintln(os.Stderr, "The following checks were performed on each of these signatures:")
 	if co.Claims {
 		if co.Annotations != nil {

@@ -5,6 +5,7 @@ import (
 	"crypto"
 	"crypto/ecdsa"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -66,6 +67,12 @@ func VerifyYaml(ctx context.Context, co CheckOpts, payloadPath string) ([]Signed
 				continue
 			}
 		}
+
+		verified, err := sp.VerifyBundle()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Unable to verify offline (%v), checking tlog instead...", err)
+		}
+		co.VerifyBundle = verified
 
 		if co.Tlog {
 			// Get the right public key to use (key or cert)

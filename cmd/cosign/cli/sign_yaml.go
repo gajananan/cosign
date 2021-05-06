@@ -19,7 +19,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"crypto"
 	"encoding/base64"
 	"flag"
 	"fmt"
@@ -30,12 +29,10 @@ import (
 	gyaml "github.com/ghodss/yaml"
 	"github.com/peterbourgon/ff/v3/ffcli"
 	"github.com/pkg/errors"
-	"golang.org/x/term"
 	"gopkg.in/yaml.v2"
 
 	"github.com/sigstore/cosign/pkg/cosign"
 	"github.com/sigstore/cosign/pkg/cosign/fulcio"
-	"github.com/sigstore/sigstore/pkg/kms"
 	"github.com/sigstore/sigstore/pkg/signature"
 )
 
@@ -46,6 +43,7 @@ type SignYamlCommand struct {
 	KmsVal      string
 	Annotations *map[string]interface{}
 	PayloadPath string
+	Pf          cosign.PassFunc
 }
 
 // Verify builds and returns an ffcli command
@@ -91,6 +89,7 @@ func (c *SignYamlCommand) Exec(ctx context.Context, args []string) error {
 
 	keyRef := c.KeyRef
 	payloadPath := c.PayloadPath
+	pf := c.Pf
 	// The payload can be specified via a flag to skip generation.
 	var payload []byte
 	var payloadYaml []byte
@@ -103,41 +102,34 @@ func (c *SignYamlCommand) Exec(ctx context.Context, args []string) error {
 	}
 
 	var signer signature.Signer
+
+	var cert string
+
 	var sig []byte
 	var pemBytes []byte
-	var cert string
+
 	if keyRef != "" {
-		k, err := kms.Get(ctx, c.KmsVal)
+		k, err := signerVerifierFromKeyRef(ctx, keyRef, pf)
 		if err != nil {
-			return err
+			return errors.Wrap(err, "reading key")
 		}
 		signer = k
-		if err != nil {
-			return errors.Wrap(err, "getting public key")
-		}
+
 		pemBytes, err = cosign.PublicKeyPem(ctx, k)
 		if err != nil {
 			return err
 		}
 	} else {
 		// Keyless!
-		fmt.Fprintln(os.Stderr, "Generating ephemeral keys...")
-		priv, err := cosign.GeneratePrivateKey()
-		if err != nil {
-			return errors.Wrap(err, "generating cert")
-		}
-		signer = signature.NewECDSASignerVerifier(priv, crypto.SHA256)
-		fmt.Fprintln(os.Stderr, "Retrieving signed certificate...")
 
-		flow := fulcio.FlowNormal
-		if !term.IsTerminal(0) {
-			fmt.Fprintln(os.Stderr, "Non-interactive mode detected, using device flow.")
-			flow = fulcio.FlowDevice
-		}
-		cert, _, err = fulcio.GetCert(ctx, priv, flow) // TODO, use the chain.
+		fmt.Fprintln(os.Stderr, "Generating ephemeral keys...")
+		k, err := fulcio.NewSigner(ctx)
 		if err != nil {
-			return errors.Wrap(err, "retrieving cert")
+			return errors.Wrap(err, "getting key from Fulcio")
 		}
+		signer = k
+		cert = k.Cert
+
 		pemBytes = []byte(cert)
 	}
 
@@ -217,11 +209,13 @@ func (c *SignYamlCommand) Exec(ctx context.Context, args []string) error {
 		}
 		rekorBytes = pemBytes
 	}
-	index, err := cosign.UploadTLog(sig, payload, rekorBytes)
+
+	entry, err := cosign.UploadTLog(sig, payload, rekorBytes)
 	if err != nil {
 		return err
 	}
-	fmt.Println("tlog entry created with index: ", index)
+	fmt.Println("tlog entry created with index: ", *entry.LogIndex)
+
 	return nil
 }
 
