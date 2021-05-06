@@ -28,6 +28,7 @@ import (
 
 	"github.com/sigstore/cosign/pkg/cosign"
 	"github.com/sigstore/cosign/pkg/cosign/fulcio"
+	"github.com/sigstore/cosign/pkg/cosign/pivkey"
 	"github.com/sigstore/sigstore/pkg/signature/payload"
 )
 
@@ -35,6 +36,7 @@ import (
 type VerifyCommand struct {
 	CheckClaims bool
 	KeyRef      string
+	Sk          bool
 	Output      string
 	Annotations *map[string]interface{}
 }
@@ -46,6 +48,8 @@ func Verify() *ffcli.Command {
 	annotations := annotationsMap{}
 
 	flagset.StringVar(&cmd.KeyRef, "key", "", "path to the public key file, URL, or KMS URI")
+	flagset.BoolVar(&cmd.Sk, "sk", false, "whether to use a hardware security key")
+
 	flagset.BoolVar(&cmd.CheckClaims, "check-claims", true, "whether to check the claims found")
 	flagset.StringVar(&cmd.Output, "output", "json", "output the signing image information. Default JSON.")
 
@@ -89,7 +93,11 @@ func (c *VerifyCommand) Exec(ctx context.Context, args []string) error {
 		return flag.ErrHelp
 	}
 
-	co := cosign.CheckOpts{
+	if !oneOf(c.KeyRef, c.Sk) && !cosign.Experimental() {
+		return &KeyParseError{}
+	}
+
+	co := &cosign.CheckOpts{
 		Annotations: *c.Annotations,
 		Claims:      c.CheckClaims,
 		Tlog:        cosign.Experimental(),
@@ -100,6 +108,12 @@ func (c *VerifyCommand) Exec(ctx context.Context, args []string) error {
 	// Keys are optional!
 	if keyRef != "" {
 		pubKey, err := publicKeyFromKeyRef(ctx, keyRef)
+		if err != nil {
+			return errors.Wrap(err, "loading public key")
+		}
+		co.PubKey = pubKey
+	} else if c.Sk {
+		pubKey, err := pivkey.NewPublicKeyProvider()
 		if err != nil {
 			return errors.Wrap(err, "loading public key")
 		}
@@ -124,7 +138,7 @@ func (c *VerifyCommand) Exec(ctx context.Context, args []string) error {
 }
 
 // printVerification logs details about the verification to stdout
-func (c *VerifyCommand) printVerification(imgRef string, verified []cosign.SignedPayload, co cosign.CheckOpts) {
+func (c *VerifyCommand) printVerification(imgRef string, verified []cosign.SignedPayload, co *cosign.CheckOpts) {
 	fmt.Fprintf(os.Stderr, "\nVerification for %s --\n", imgRef)
 	fmt.Fprintln(os.Stderr, "The following checks were performed on each of these signatures:")
 	if co.Claims {
@@ -133,7 +147,9 @@ func (c *VerifyCommand) printVerification(imgRef string, verified []cosign.Signe
 		}
 		fmt.Fprintln(os.Stderr, "  - The cosign claims were validated")
 	}
-	if co.Tlog {
+	if co.VerifyBundle {
+		fmt.Fprintln(os.Stderr, "  - Existence of the claims in the transparency log was verified offline")
+	} else if co.Tlog {
 		fmt.Fprintln(os.Stderr, "  - The claims were present in the transparency log")
 		fmt.Fprintln(os.Stderr, "  - The signatures were integrated into the transparency log when the certificate was valid")
 	}
@@ -166,6 +182,12 @@ func (c *VerifyCommand) printVerification(imgRef string, verified []cosign.Signe
 					ss.Optional = make(map[string]interface{})
 				}
 				ss.Optional["CommonName"] = vp.Cert.Subject.CommonName
+			}
+			if vp.Bundle != nil {
+				if ss.Optional == nil {
+					ss.Optional = make(map[string]interface{})
+				}
+				ss.Optional["Bundle"] = vp.Bundle
 			}
 
 			outputKeys = append(outputKeys, ss)

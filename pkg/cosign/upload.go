@@ -16,7 +16,6 @@
 package cosign
 
 import (
-	"encoding/base64"
 	"fmt"
 	"os"
 	"strconv"
@@ -35,14 +34,22 @@ import (
 )
 
 const (
-	ExperimentalEnv = "COSIGN_EXPERIMENTAL"
-	repoEnv         = "COSIGN_REPOSITORY"
-	ServerEnv       = "REKOR_SERVER"
-	rekorServer     = "https://api.rekor.dev"
+	ExperimentalEnv     = "COSIGN_EXPERIMENTAL"
+	repoEnv             = "COSIGN_REPOSITORY"
+	DockerMediaTypesEnv = "COSIGN_DOCKER_MEDIA_TYPES"
+	ServerEnv           = "REKOR_SERVER"
+	rekorServer         = "https://api.rekor.dev"
 )
 
 func Experimental() bool {
 	if b, err := strconv.ParseBool(os.Getenv(ExperimentalEnv)); err == nil {
+		return b
+	}
+	return false
+}
+
+func DockerMediaTypes() bool {
+	if b, err := strconv.ParseBool(os.Getenv(DockerMediaTypesEnv)); err == nil {
 		return b
 	}
 	return false
@@ -70,10 +77,10 @@ func DestinationRef(ref name.Reference, img *remote.Descriptor) (name.Reference,
 }
 
 // Upload will upload the signature, public key and payload to the tlog
-func UploadTLog(signature, payload []byte, pemBytes []byte) (string, error) {
+func UploadTLog(signature, payload []byte, pemBytes []byte) (*models.LogEntryAnon, error) {
 	rekorClient, err := app.GetRekorClient(TlogServer())
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	re := rekorEntry(payload, signature, pemBytes)
@@ -87,23 +94,20 @@ func UploadTLog(signature, payload []byte, pemBytes []byte) (string, error) {
 	if err != nil {
 		// If the entry already exists, we get a specific error.
 		// Here, we display the proof and succeed.
-		if _, ok := err.(*entries.CreateLogEntryConflict); ok {
-			cs := SignedPayload{
-				Base64Signature: base64.StdEncoding.EncodeToString(signature),
-				Payload:         payload,
-			}
+		if existsErr, ok := err.(*entries.CreateLogEntryConflict); ok {
+
 			fmt.Println("Signature already exists. Displaying proof")
-
-			return FindTlogEntry(rekorClient, cs.Base64Signature, cs.Payload, pemBytes)
-
+			uriSplit := strings.Split(existsErr.Location.String(), "/")
+			uuid := uriSplit[len(uriSplit)-1]
+			return VerifyTLogEntry(rekorClient, uuid)
 		}
-		return "", err
+		return nil, err
 	}
 	// UUID is at the end of location
 	for _, p := range resp.Payload {
-		return strconv.FormatInt(*p.LogIndex, 10), nil
+		return &p, nil
 	}
-	return "", errors.New("bad response from server")
+	return nil, errors.New("bad response from server")
 }
 
 func rekorEntry(payload, signature, pubKey []byte) rekord_v001.V001Entry {

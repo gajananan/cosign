@@ -35,7 +35,7 @@ CI Built containers are published for every commit at `gcr.io/projectsigstore/co
 They are tagged with the commit.
 They can be found with `crane ls`:
 
-```
+```shell
 $ crane ls gcr.io/projectsigstore/cosign/ci/cosign
 749f896
 749f896bb378aca5cb45c5154fc0cb43f6728d48
@@ -46,22 +46,29 @@ Signed release containers are available at `gcr.io/projectsigstore/cosign`.
 They are tagged with the release name.
 They can be found with `crane ls`:
 
-```
+```shell
 $ crane ls gcr.io/projectsigstore/cosign
-sha256-b9e72eb217dd93d2144b8143d8c9812e62b32903e790b325116641e89df03e5f.cosign
-v0.2.0
+sha256-7e9a6ca62c3b502a125754fbeb4cde2d37d4261a9c905359585bfc0a63ff17f4.sig
+v0.4.0
+...
 ```
 
 ### Releases
 
-Releases are published in this repository under the Releases page, and hosted in the GCS bucket `cosign-releases`.
+Releases are published in this repository under the [Releases page](https://github.com/sigstore/cosign/releases), and hosted in the GCS bucket `cosign-releases`.
 They can be viewed with `gsutil`:
 
-```
-$ gsutil ls gs://cosign-releases/v0.1.0
-gs://cosign-releases/v0.1.0/cosign
-gs://cosign-releases/v0.1.0/cosign.sha256
-gs://cosign-releases/v0.1.0/cosign.sig
+```shell
+$ gsutil ls gs://cosign-releases/v0.4.0
+gs://cosign-releases/v0.4.0/cosign-darwin-amd64
+gs://cosign-releases/v0.4.0/cosign-darwin-amd64.sha256
+gs://cosign-releases/v0.4.0/cosign-darwin-amd64.sig
+gs://cosign-releases/v0.4.0/cosign-linux-amd64
+gs://cosign-releases/v0.4.0/cosign-linux-amd64.sha256
+gs://cosign-releases/v0.4.0/cosign-linux-amd64.sig
+gs://cosign-releases/v0.4.0/cosign-windows-amd64.exe
+gs://cosign-releases/v0.4.0/cosign-windows-amd64.exe.sha256
+gs://cosign-releases/v0.4.0/cosign-windows-amd64.exe.sig
 ```
 
 Cross platform builds started in v0.2.0.
@@ -80,7 +87,7 @@ See the [FUN.md](FUN.md) documentation for some fun tips and tricks!
 
 ### Generate a keypair
 
-```
+```shell
 $ cosign generate-key-pair
 Enter password for private key:
 Enter again:
@@ -90,10 +97,10 @@ Public key written to cosign.key
 
 ### Sign a container and store the signature in the registry
 
-```
+```shell
 $ cosign sign -key cosign.key dlorenc/demo
 Enter password for private key:
-Pushing signature to: index.docker.io/dlorenc/demo:sha256-87ef60f558bad79beea6425a3b28989f01dd417164150ab3baab98dcbf04def8.cosign
+Pushing signature to: index.docker.io/dlorenc/demo:sha256-87ef60f558bad79beea6425a3b28989f01dd417164150ab3baab98dcbf04def8.sig
 ```
 
 ### Verify a container against a public key
@@ -106,12 +113,12 @@ Any valid payloads are printed to stdout, in json format.
 Note that these signed payloads include the digest of the container image, which is how we can be
 sure these "detached" signatures cover the correct image.
 
-```
+```shell
 $ cosign verify -key cosign.pub dlorenc/demo
 The following checks were performed on these signatures:
   - The cosign claims were validated
   - The signatures were verified against the specified public key
-{"Critical":{"Identity":{"docker-reference":""},"Image":{"Docker-manifest-digest":"sha256:87ef60f558bad79beea6425a3b28989f01dd417164150ab3baab98dcbf04def8"},"Type":"cosign container signature"},"Optional":null}
+{"Critical":{"Identity":{"docker-reference":""},"Image":{"Docker-manifest-digest":"sha256:87ef60f558bad79beea6425a3b28989f01dd417164150ab3baab98dcbf04def8"},"Type":"cosign container image signature"},"Optional":null}
 ```
 
 ## Detailed Usage
@@ -125,10 +132,11 @@ See the [Hardware Tokens documentation](TOKENS.md) for information on how to use
 ## Registry Support
 
 `cosign` uses [go-containerregistry](https://github.com/google/go-containerregistry) for registry
-interactions, which has excellent support, but some registries may have quirks.
+interactions, which has generally excellent compatibility, but some registries may have quirks.
 
 Today, `cosign` has been tested and works against the following registries:
 
+* AWS Elastic Container Registry
 * GCP's Artifact Registry and Container Registry
 * Docker Hub
 * Azure Container Registry
@@ -139,7 +147,11 @@ Today, `cosign` has been tested and works against the following registries:
 * The CNCF Harbor Registry
 * Digital Ocean Container Registry
 
-We aim for wide registry support.
+We aim for wide registry support. To `sign` images in registries which do not yet fully support [OCI media types](https://github.com/sigstore/cosign/blob/main/SPEC.md#object-types), one may need to use `COSIGN_DOCKER_MEDIA_TYPES` to fall back to legacy equivalents. For example:
+```shell
+COSIGN_DOCKER_MEDIA_TYPES=1 cosign sign -key cosign.key legacy-registry.example.com/my/image
+```
+
 Please help test and file bugs if you see issues!
 Instructions can be found in the [tracking issue](https://github.com/sigstore/cosign/issues/40).
 
@@ -149,7 +161,7 @@ _Note: this is an experimental feature_
 To publish signed artifacts to a Rekor transparency log and verify their existence in the log
 set the `COSIGN_EXPERIMENTAL=1` environment variable.
 
-```
+```shell
 COSIGN_EXPERIMENTAL=1 cosign sign -key cosign.key dlorenc/demo
 COSIGN_EXPERIMENTAL=1 cosign verify -key cosign.pub dlorenc/demo
 ```
@@ -189,7 +201,7 @@ See https://github.com/sigStore/fulcio for more info.
 format for payloads.
 That looks like:
 
-```
+```json
 {
     "critical": {
            "identity": {
@@ -198,10 +210,10 @@ That looks like:
            "image": {
                "Docker-manifest-digest": "sha256:20be...fe55"
            },
-           "type": "cosign container signature"
+           "type": "cosign container image signature"
     },
     "optional": {
-           "creator": "atomic",
+           "creator": "Bob the Builder",
            "timestamp": 1458239713
     }
 }
@@ -232,9 +244,9 @@ To specify a different repo for signatures, you can set the `COSIGN_REPOSITORY` 
 This will replace the repo in the provided image like this:
 ```
 export COSIGN_REPOSITORY=gcr.io/my-new-repo
-gcr.io/dlorenc-vmtest2/demo -> gcr.io/my-new-repo/demo:sha256-DIGEST.cosign
+gcr.io/dlorenc-vmtest2/demo -> gcr.io/my-new-repo/demo:sha256-DIGEST.sig
 ```
-So the signature for `gcr.io/dlorenc-vmtest2/demo` will be stored in `gcr.io/my-new-repo/demo:sha256-DIGEST.cosign`.
+So the signature for `gcr.io/dlorenc-vmtest2/demo` will be stored in `gcr.io/my-new-repo/demo:sha256-DIGEST.sig`.
 
 
 ## Signature Specification
@@ -270,7 +282,7 @@ on the sha256 of what we're signing) for locating the signature index.
   <img src="/images/signatures.dot.svg" />
 </p>
 
-`reg.example.com/ubuntu@sha256:703218c0465075f4425e58fac086e09e1de5c340b12976ab9eb8ad26615c3715` has signatures located at `reg.example.com/ubuntu:sha256-703218c0465075f4425e58fac086e09e1de5c340b12976ab9eb8ad26615c3715`
+`reg.example.com/ubuntu@sha256:703218c0465075f4425e58fac086e09e1de5c340b12976ab9eb8ad26615c3715` has signatures located at `reg.example.com/ubuntu:sha256-703218c0465075f4425e58fac086e09e1de5c340b12976ab9eb8ad26615c3715.sig`
 
 Roughly (ignoring ports in the hostname): `s/:/-/g` and `s/@/:/g` to find the signature index.
 
@@ -285,23 +297,12 @@ registry, an explicit reference to a signature index, a new registry API, grafea
 The proposed mechanism is flexible enough to support signing arbitrary things.
 
 ### KMS Support
+
 `cosign` supports using a KMS provider to generate and sign keys.
-Right now we only support GCP KMS, but are hoping to support more in the future!
+Right now cosign supports Vault and GCP KMS, but are hoping to support more in the future!
 
-To generate a key in GCP KMS (and a key ring, if necessary) run:
-```
-cosign generate-key-pair -kms gcpkms://projects/<PROJECT ID>/locations/<LOCATION>/keyRings/<KEY_RING>/cryptoKeys/<KEY_NAME>
-```
-This command will also save the public key to a file locally, which can be used for verification later on.
+See the [KMS docs](KMS.md) for more details.
 
-To sign an image run:
-```
-cosign sign -kms gcpkms://projects/<PROJECT ID>/locations/<LOCATION>/keyRings/<KEY_RING>/cryptoKeys/<KEY_NAME> dlorenc/demo
-```
-
-and to verify with the public key in KMS:
-```
-cosign verify -kms gcpkms://projects/<PROJECT ID>/locations/<LOCATION>/keyRings/<KEY_RING>/cryptoKeys/<KEY_NAME> dlorenc/demo
 ```
 
 ### OCI Artifacts
@@ -320,7 +321,7 @@ Now sign it! Using `cosign` of course:
 ```shell
 $ cosign sign -key cosign.key us-central1-docker.pkg.dev/dlorenc-vmtest2/test/artifact@sha256:551e6cce7ed2e5c914998f931b277bc879e675b74843e6f29bc17f3b5f692bef
 Enter password for private key:
-Pushing signature to: us-central1-docker.pkg.dev/dlorenc-vmtest2/test/artifact:sha256-551e6cce7ed2e5c914998f931b277bc879e675b74843e6f29bc17f3b5f692bef.cosign
+Pushing signature to: us-central1-docker.pkg.dev/dlorenc-vmtest2/test/artifact:sha256-551e6cce7ed2e5c914998f931b277bc879e675b74843e6f29bc17f3b5f692bef.sig
 ```
 
 Finally, verify `cosign` with `cosign` again:
@@ -333,7 +334,8 @@ The following checks were performed on each of these signatures:
   - The signatures were integrated into the transparency log when the certificate was valid
   - The signatures were verified against the specified public key
   - Any certificates were verified against the Fulcio roots.
-{"Critical":{"Identity":{"docker-reference":""},"Image":{"Docker-manifest-digest":"sha256:551e6cce7ed2e5c914998f931b277bc879e675b74843e6f29bc17f3b5f692bef"},"Type":"cosign container signature"},"Optional":null}
+
+{"Critical":{"Identity":{"docker-reference":""},"Image":{"Docker-manifest-digest":"sha256:551e6cce7ed2e5c914998f931b277bc879e675b74843e6f29bc17f3b5f692bef"},"Type":"cosign container image signature"},"Optional":null}
 ```
 
 ## FAQ
@@ -414,14 +416,14 @@ $ TAG=sign-me
 $ DGST=$(crane digest dlorenc/demo:$TAG)
 $ cosign sign -key cosign.key -a tag=$TAG dlorenc/demo@$DGST
 Enter password for private key:
-Pushing signature to: dlorenc/demo:sha256-97fc222cee7991b5b061d4d4afdb5f3428fcb0c9054e1690313786befa1e4e36.cosign
+Pushing signature to: dlorenc/demo:sha256-97fc222cee7991b5b061d4d4afdb5f3428fcb0c9054e1690313786befa1e4e36.sig
 ```
 
 Then you can verify that the tag->digest mapping is also covered in the signature, using the `-a` flag to `cosign verify`.
 This example verifes that the digest `$TAG` points to (`sha256:97fc222cee7991b5b061d4d4afdb5f3428fcb0c9054e1690313786befa1e4e36`)
 has been signed, **and also** that the `$TAG`:
 
-```
+```shell
 $ cosign verify -key cosign.pub -a tag=$TAG dlorenc/demo:$TAG | jq .
 {
   "Critical": {
@@ -431,7 +433,7 @@ $ cosign verify -key cosign.pub -a tag=$TAG dlorenc/demo:$TAG | jq .
     "Image": {
       "Docker-manifest-digest": "97fc222cee7991b5b061d4d4afdb5f3428fcb0c9054e1690313786befa1e4e36"
     },
-    "Type": "cosign container signature"
+    "Type": "cosign container image signature"
   },
   "Optional": {
     "tag": "sign-me"
@@ -508,7 +510,7 @@ Before we sign the signature artifact, we first give it a memorable name so we c
 ```shell
 $ cosign sign -key cosign.key -a sig=original dlorenc/demo
 Enter password for private key:
-Pushing signature to: dlorenc/demo:sha256-97fc222cee7991b5b061d4d4afdb5f3428fcb0c9054e1690313786befa1e4e36.cosign
+Pushing signature to: dlorenc/demo:sha256-97fc222cee7991b5b061d4d4afdb5f3428fcb0c9054e1690313786befa1e4e36.sig
 $ cosign verify -key cosign.pub dlorenc/demo | jq .
 {
   "Critical": {
@@ -518,7 +520,7 @@ $ cosign verify -key cosign.pub dlorenc/demo | jq .
     "Image": {
       "Docker-manifest-digest": "97fc222cee7991b5b061d4d4afdb5f3428fcb0c9054e1690313786befa1e4e36"
     },
-    "Type": "cosign container signature"
+    "Type": "cosign container image signature"
   },
   "Optional": {
     "sig": "original"
@@ -530,17 +532,16 @@ $ crane tag $(cosign triangulate dlorenc/demo) mysignature
 2021/02/15 20:22:55 dlorenc/demo:mysignature: digest: sha256:71f70e5d29bde87f988740665257c35b1c6f52dafa20fab4ba16b3b1f4c6ba0e size: 556
 $ cosign sign -key cosign.key -a sig=counter dlorenc/demo:mysignature
 Enter password for private key:
-Pushing signature to: dlorenc/demo:sha256-71f70e5d29bde87f988740665257c35b1c6f52dafa20fab4ba16b3b1f4c6ba0e.cosign
+Pushing signature to: dlorenc/demo:sha256-71f70e5d29bde87f988740665257c35b1c6f52dafa20fab4ba16b3b1f4c6ba0e.sig
 $ cosign verify -key cosign.pub dlorenc/demo:mysignature
-{"Critical":{"Identity":{"docker-reference":""},"Image":{"Docker-manifest-digest":"71f70e5d29bde87f988740665257c35b1c6f52dafa20fab4ba16b3b1f4c6ba0e"},"Type":"cosign container signature"},"Optional":{"sig":"counter"}}
+{"Critical":{"Identity":{"docker-reference":""},"Image":{"Docker-manifest-digest":"71f70e5d29bde87f988740665257c35b1c6f52dafa20fab4ba16b3b1f4c6ba0e"},"Type":"cosign container image signature"},"Optional":{"sig":"counter"}}
 
 # Finally, check the original signature
 $ crane manifest dlorenc/demo@sha256:71f70e5d29bde87f988740665257c35b1c6f52dafa20fab4ba16b3b1f4c6ba0e
 {
   "schemaVersion": 2,
-  "mediaType": "application/vnd.docker.distribution.manifest.v2+json",
   "config": {
-    "mediaType": "application/vnd.docker.container.image.v1+json",
+    "mediaType": "application/vnd.oci.image.config.v1+json",
     "size": 233,
     "digest": "sha256:3b25a088710d03f39be26629d22eb68cd277a01673b9cb461c4c24fbf8c81c89"
   },

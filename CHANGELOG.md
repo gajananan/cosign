@@ -1,5 +1,70 @@
 # Changelog
 
+## v0.5.0 (pending)
+
+## v0.4.0
+
+### Action Required
+
+* Signatures created with `cosign` before v0.4.0 are not compatible with those created after
+    * The signature image's manifest now uses OCI mediaTypes ([#300](https://github.com/sigstore/cosign/pull/300))
+    * The signature image's tag is now terminated with `.sig` (instead of `.cosign`, [#287](https://github.com/sigstore/cosign/pull/287))
+
+### Enhancements
+
+* 🎉 Added support for "offline" verification of Rekor signatures 🎉 (ありがとう, priyawadhwa! [#285](https://github.com/sigstore/cosign/pull/285))
+* Support for Hashicorp vault as a KMS provider has been added (Danke, RichiCoder1! [sigstore/sigstore #44](https://github.com/sigstore/sigstore/pull/44), [sigstore/sigstore #49](https://github.com/sigstore/sigstore/pull/44))
+
+### Bug Fixes
+
+* GCP KMS URIs now include the key version ([#45](https://github.com/sigstore/sigstore/pull/45))
+
+### Contributors
+
+* Christian Pearce (@pearcec)
+* Dan Lorenc (@dlorenc)
+* Jake Sanders (@dekkagaijin)
+* Priya Wadhwa (@priyawadhwa)
+* Richard Simpson (@RichiCoder1)
+* Ross Timson (@rosstimson)
+
+## v0.3.1
+
+### Bug Fixes
+
+* Fixed CI container image breakage introduced in v0.3.0
+* Fixed lack of version information in release binaries
+
+## v0.3.0
+
+This is the third release of `cosign`!
+
+We still expect many flags, commands, and formats to change going forward, but we're getting closer.
+No backwards compatiblity is promised or implied yet, though we are hoping to formalize this policy in the next release.
+See [#254](https://github.com/sigstore/cosign/issues/254) for more info.
+
+### Enhancements
+
+* The `-output-file` flag supports writing output to a specific file
+* The `-key` flag now supports `kms` references and URLs, the `kms` specific flag has been removed
+* Yubikey/PIV hardware support is now included!
+* Support for signing and verifying multiple images in one invocation
+
+### Bug Fixes
+
+* Bug fixes in KMS keypair generation
+* Bug fixes in key type parsing
+
+### Contributors
+
+* Dan Lorenc
+* Priya Wadhwa
+* Ivan Font
+* Depandabot!
+* Mark Bestavros
+* Jake Sanders
+* Carlos Tadeu Panato Junior 
+
 ## v0.2.0
 
 This is the second release of `cosign`!

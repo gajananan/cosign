@@ -99,7 +99,23 @@ Gyp4apdU7AXEwysEQIb034aPrTlpmxh90SnTZFs2DHOvCjCPPAmoWfuQUwPhSPRb
 -----END CERTIFICATE-----
 ```
 
-* `bundle` TODO
+* `bundle` string
+  This OPTIONAL property contains a JSON formatted `bundle` type, which can be used for offline verification.
+  Example `bundle`:
+
+```json
+{
+  "SignedEntryTimestamp": "MEQCIFRc9xXIoqCxUPXnoYlWyoWL4hX2aGnQOf0fVbxlUXdFAiAUkUBkEv+6Q4T0hdTgcnFgPdEHLwDigT7QD0cUvgRaOw==",
+  "Body": "eyJhcGlWZXJzaW9uIjoiMC4wLjEiLCJzcGVjIjp7ImRhdGEiOnsiaGFzaCI6eyJhbGdvcml0aG0iOiJzaGEyNTYiLCJ2YWx1ZSI6Ijk4OGNhN2U3MGViNmY2NWRkMzQ1ZWFjYjM4MGM1YmM0NDA2MmM3MjJhNTI1MzlmYWQ3Mzk0Mzg2ZTAyYTIwNWMifX0sInNpZ25hdHVyZSI6eyJjb250ZW50IjoiTUVRQ0lHRndhL2tTNlprUFlUN3RzSzl5UVlLeDhTU1paektNeU5vS2xOS3ZNWDhCQWlCZGVTdXp1ZWo5bWo1SWhYZjF2Rll5TlVNQkRxTUtzcXluaVN3WWtudC9DZz09IiwiZm9ybWF0IjoieDUwOSIsInB1YmxpY0tleSI6eyJjb250ZW50IjoiTFMwdExTMUNSVWRKVGlCRFJWSlVTVVpKUTBGVVJTMHRMUzB0Q2sxSlNVTjFWRU5EUVd0RFowRjNTVUpCWjBsVlFVcENXRVYyTWxaVE5uQkVSRGhMYTBaVFVrVTRURWN4VTIxTmQwTm5XVWxMYjFwSmVtb3dSVUYzVFhjS1MycEZWazFDVFVkQk1WVkZRMmhOVFdNeWJHNWpNMUoyWTIxVmRWcEhWakpOVWtWM1JIZFpSRlpSVVVSRmQyaDZZVmRrZW1SSE9YbGFWRUZsUm5jd2VRcE5WRUV3VFhwQmVVMVVWWGRPUkdSaFJuY3dlVTFVUVRCTmVrRjVUV3BGZDA1RVpHRk5SVWw0U0hwQlpFSm5UbFpDUVc5TlJtNUNlV0ZZYkdoa01rWnJDbUZJWkdoUlIyUjJZakprYzFwVE5XcGlNakI0U0hwQlpFSm5UbFpDUVUxTlJtNUNlV0ZZYkdoa01rWnJZVWhrYUZGSFpIWmlNbVJ6V2xNMWFtSXlNSGNLVjFSQlZFSm5ZM0ZvYTJwUFVGRkpRa0puWjNGb2EycFBVRkZOUWtKM1RrTkJRVk12ZG5CdGRVMUdZUzlGWWpsT1JWazFhMGczWkdKSFRFZGFlVkl2Y1FvNU1FSnNOM2hzUm5OaVNVWTVTWEZCUW1ReEwwRkpWV0pqT0RScVkzbHZOa1Z6U21aRmFYZFRabkIxY2s5Wk5IbHFWVEJSV2s4dloyODBTVUpMYWtORENrRlRXWGRFWjFsRVZsSXdVRUZSU0M5Q1FWRkVRV2RsUVUxQ1RVZEJNVlZrU2xGUlRVMUJiMGREUTNOSFFWRlZSa0ozVFVSTlFYZEhRVEZWWkVWM1JVSUtMM2RSUTAxQlFYZElVVmxFVmxJd1QwSkNXVVZHUzNkeGVtVnpNbGRQU1M4MFEycFVkMnRLWW5Wck0wRmthMDVzVFVJNFIwRXhWV1JKZDFGWlRVSmhRUXBHVFdwR1NGRkNRbTFwVVhCTmJFVnJObmN5ZFZOMU1VdENkRkJ6VFVsSFRrSm5aM0pDWjBWR1FsRmpRa0ZSVTBKblJFSXJUVWgzUjBORGMwZEJVVlZHQ2tKNlFVTm9ia0p2WkVoU2QwOXBPSFpqU0Vwd1pHMUdNRnBYVG1oTVYwNTJZbTVTYkdKdVVYUk9ha0Y2V20xVk0xcFVZM1JOUkVGM1RVTXdlVTFxU1RNS1RGZEtiVTU2VlhSYWFsSnRUbGRWTkUxSFVYbFBWRlV3VEc1T01HSXpTbWhhTWxWMVdqSTVkbG95ZUd4WldFSndZM2sxYW1JeU1IWlpNa1Y2VG0xRmVBcGFWR3N5VFdwUmVWbHFiRzFaTWtsNFRrUlpkbGt5UlhWWk0wb3dUVU5GUjBFeFZXUkZVVkZoVFVKcFFrWnVRbmxoV0d4b1pESkdhMkZJWkdoUlIyUjJDbUl5WkhOYVV6VnFZakl3ZDBObldVbExiMXBKZW1vd1JVRjNUVVJhZDBGM1drRkpkMGhqUjBWVFprMUtPRk41UmsxWk1GZHJhMHd4Wm1aNVdHcERlQ3NLVVZoUVRUZFFZbkEyZDJWWFpYUmtabU4zUzBoelRFNU1NMDFTTTJwbGFXeG9iV0p2UVdwQmVVcGtiamxQVm5sVllrRkJPVXR0VUdoa1kwcDVTRlIwV1Fwb1NFZzBObXBzUjJNMFJXMURSVXBwU2sxNmVuWm5WamRSYmxOeU5HaFJlRWRoYjFWQlowRTlDaTB0TFMwdFJVNUVJRU5GVWxSSlJrbERRVlJGTFMwdExTMEsifX19LCJraW5kIjoicmVrb3JkIn0=",
+  "IntegratedTime": 1619819449,
+  "LogIndex": 3460
+}
+```
+  The following are REQUIRED properties of the bundle:
+    - The `SignedEntryTimestamp` is a rekor-signed signature over the logIndex, body and integratedTime of the Rekor Log Entry
+    - The `Body` is the body of the Rekor Log Entry
+    - The `IntegratedTime` is the UNIX timestamp the log entry was integrated into the transparency log
+    - The `LogIndex` is the index of the log entry in the transparency log
 
 ## Storage
 
@@ -124,14 +140,14 @@ If the object is referenced by tag, the tag must first be resolved to a digest.
 Then the digest of the object (of the form `sha256:abcdef...`) is encoded into a tag name using the following rules:
 
 * Replace the `:` character with a `-`
-* Append the `.cosign` suffix
+* Append the `.sig` suffix
 
 Example digest->tag mapping:
 
 1. Start with `gcr.io/dlorenc-vmtest2/demo:latest`
 2. Resolve this to a digest: `sha256:97fc222cee7991b5b061d4d4afdb5f3428fcb0c9054e1690313786befa1e4e36`
-3. Follow the encoding rules: `sha256-97fc222cee7991b5b061d4d4afdb5f3428fcb0c9054e1690313786befa1e4e36.cosign`
-4. Signature can be found at `gcr.io/dlorenc-vmtest2/demo:sha256-97fc222cee7991b5b061d4d4afdb5f3428fcb0c9054e1690313786befa1e4e36.cosign`
+3. Follow the encoding rules: `sha256-97fc222cee7991b5b061d4d4afdb5f3428fcb0c9054e1690313786befa1e4e36.sig`
+4. Signature can be found at `gcr.io/dlorenc-vmtest2/demo:sha256-97fc222cee7991b5b061d4d4afdb5f3428fcb0c9054e1690313786befa1e4e36.sig`
 
 Implementations MAY store signatures objects in the same OCI repository as the target image or a different one.
 
@@ -140,11 +156,12 @@ Implementations MAY store signatures objects in the same OCI repository as the t
 This section describes the way the properties from above are embedded into OCI objects that can be stored in a registry.
 Implementations MUST support storing signatures in at least the following object types:
 
-* [Image Manifest V2 Schema 2](https://docs.docker.com/registry/spec/manifest-v2-2/)
+* [OCI Image Manifest V1](#oci-image-manifest-v1)
 
-#### Image Manifest V2 Schema 2
+#### OCI Image Manifest V1
 
-This section describes the way the mandatory and optional signature properties are embedded into an Image Manifest V2 Schema 2 object.
+This section describes the way the mandatory and optional signature properties are embedded into an
+[OCI Image Manifest V1](https://github.com/opencontainers/image-spec/blob/master/manifest.md) object.
 
 Only one image manifest is created for every signed object.
 Multiple signatures can be embedded in one image manifest.
@@ -158,11 +175,11 @@ The `mediaType` property for the `payload` is included in the same descriptor.
 
 Example `payload`:
 
-```
+```json
 {
   "schemaVersion": 2,
-  "mediaType": "application/vnd.docker.distribution.manifest.v2+json",
   "config": {
+    "mediaType": "application/vnd.oci.image.config.v1+json",
     <omitted for brevity>
   },
   "layers": [
@@ -173,7 +190,7 @@ Example `payload`:
     },
     <other layers here>
   ]
-)
+}
 ```
 
 ##### Signature
@@ -183,7 +200,7 @@ The `annotation` key is `dev.cosignproject.cosign/signature`.
 
 Example `signature`:
 
-```
+```json
 "annotations": {
     "dev.cosignproject.cosign/signature": "MEUCIBKI9FIC+YD3m/lWViyPxsJsbnIHj86sSbb7L3qvpEFoAiEA2ZChO/67CuAPQKJLBVsAc7bs9hBK8RpsdfjBsByGKJM="
 }
@@ -196,7 +213,7 @@ The `annotation` key is `dev.cosignproject.cosign/certificate`.
 
 Example `certificate`:
 
-```
+```json
 "annotations": {
      "dev.sigstore.cosign/certificate": "-----BEGIN CERTIFICATE-----\nMIICrjCCAjSgAwIBAgIUAM4mURWUSkg06fmHmFfTmerYKaUwCgYIKoZIzj0EAwMw\nKjEVMBMGA1UEChMMc2lnc3RvcmUuZGV2MREwDwYDVQQDEwhzaWdzdG9yZTAeFw0y\nMTA0MDExNTU5MDZaFw0yMTA0MDExNjE4NTlaMDoxGzAZBgNVBAoMEmRsb3JlbmNA\nZ29vZ2xlLmNvbTEbMBkGA1UEAwwSZGxvcmVuY0Bnb29nbGUuY29tMFkwEwYHKoZI\nzj0CAQYIKoZIzj0DAQcDQgAE3R0ZtpfBd3Y8DaXuB1gM8JPlhsDIEfXO/WsMJEN1\n4hEn8wajX2HklqL7igZPFICv6tBUGylIHp2mTH2Nhv38mqOCASYwggEiMA4GA1Ud\nDwEB/wQEAwIHgDATBgNVHSUEDDAKBggrBgEFBQcDAzAMBgNVHRMBAf8EAjAAMB0G\nA1UdDgQWBBTy3UWIop0bNrdNgSrVHHD10qSASTAfBgNVHSMEGDAWgBTIxR0AQZok\nKTJRJOsNrkrtSgbT7DCBjQYIKwYBBQUHAQEEgYAwfjB8BggrBgEFBQcwAoZwaHR0\ncDovL3ByaXZhdGVjYS1jb250ZW50LTYwM2ZlN2U3LTAwMDAtMjIyNy1iZjc1LWY0\nZjVlODBkMjk1NC5zdG9yYWdlLmdvb2dsZWFwaXMuY29tL2NhMzZhMWU5NjI0MmI5\nZmNiMTQ2L2NhLmNydDAdBgNVHREEFjAUgRJkbG9yZW5jQGdvb2dsZS5jb20wCgYI\nKoZIzj0EAwMDaAAwZQIwC15Gtd9F6W9lmJuoXMym9DfWlBpK5HEPak38WPXqowRp\n6p+2/3jSLkFT5Nn5fuISAjEAouVlX4zH2rlkfg45HnDJax7o6ZV+E0/6BdAms44D\nEj6T/GLK6XJSB28haSPRWB7k\n-----END CERTIFICATE-----\n",
 }
@@ -209,7 +226,7 @@ The `annotation` key is `dev.cosignproject.cosign/chain`.
 
 Example `chain`:
 
-```
+```json
 "annotations": {
       "dev.sigstore.cosign/chain": "-----BEGIN CERTIFICATE-----\nMIIB+DCCAX6gAwIBAgITNVkDZoCiofPDsy7dfm6geLbuhzAKBggqhkjOPQQDAzAq\nMRUwEwYDVQQKEwxzaWdzdG9yZS5kZXYxETAPBgNVBAMTCHNpZ3N0b3JlMB4XDTIx\nMDMwNzAzMjAyOVoXDTMxMDIyMzAzMjAyOVowKjEVMBMGA1UEChMMc2lnc3RvcmUu\nZGV2MREwDwYDVQQDEwhzaWdzdG9yZTB2MBAGByqGSM49AgEGBSuBBAAiA2IABLSy\nA7Ii5k+pNO8ZEWY0ylemWDowOkNa3kL+GZE5Z5GWehL9/A9bRNA3RbrsZ5i0Jcas\ntaRL7Sp5fp/jD5dxqc/UdTVnlvS16an+2Yfswe/QuLolRUCrcOE2+2iA5+tzd6Nm\nMGQwDgYDVR0PAQH/BAQDAgEGMBIGA1UdEwEB/wQIMAYBAf8CAQEwHQYDVR0OBBYE\nFMjFHQBBmiQpMlEk6w2uSu1KBtPsMB8GA1UdIwQYMBaAFMjFHQBBmiQpMlEk6w2u\nSu1KBtPsMAoGCCqGSM49BAMDA2gAMGUCMH8liWJfMui6vXXBhjDgY4MwslmN/TJx\nVe/83WrFomwmNf056y1X48F9c4m3a3ozXAIxAKjRay5/aj/jsKKGIkmQatjI8uup\nHr/+CxFvaJWmpYqNkLDGRU+9orzh5hI2RrcuaQ==\n-----END CERTIFICATE-----"
 }
@@ -232,6 +249,25 @@ The following additional semantics are applied:
 * The `critical.identity.docker-reference` field is ignored.
 * Optional user-specified claims may be included in the `Optional` section.
 
+For example:
+```json
+{
+    "critical": {
+           "identity": {
+               "docker-reference": "testing/manifest"
+           },
+           "image": {
+               "Docker-manifest-digest": "sha256:20be...fe55"
+           },
+           "type": "cosign container image signature"
+    },
+    "optional": {
+           "creator": "atomic",
+           "timestamp": 1458239713
+    }
+}
+```
+
 ## Signature Schemes
 
 Implementations must support at least the following schemes:
@@ -251,7 +287,7 @@ When the payload is stored as a `blob` in the OCI registry, it is exposed and re
 
 Example referenced payload:
 
-```
+```json
 {
   "mediaType": "application/vnd.dev.cosign.simplesigning.v1+json",
   "size": 210,

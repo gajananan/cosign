@@ -19,14 +19,19 @@ import (
 	"context"
 	"crypto"
 	"crypto/ecdsa"
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
+	_ "embed" // To enable the `go:embed` directive.
+
+	"github.com/cyberphone/json-canonicalization/go/src/webpki.org/jsoncanonicalizer"
 	"github.com/go-openapi/swag"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -42,6 +47,11 @@ import (
 	"github.com/sigstore/sigstore/pkg/signature/payload"
 )
 
+// This is rekor's public key, via `curl -L api.rekor.dev/api/v1/log/publicKey`
+// rekor.pub should be updated whenever the Rekor public key is rotated & the bundle annotation should be up-versioned
+//go:embed rekor.pub
+var rekorPub string
+
 func getTlogEntry(rekorClient *client.Rekor, uuid string) (*models.LogEntryAnon, error) {
 	params := entries.NewGetLogEntryByUUIDParams()
 	params.SetEntryUUID(uuid)
@@ -55,12 +65,12 @@ func getTlogEntry(rekorClient *client.Rekor, uuid string) (*models.LogEntryAnon,
 	return nil, errors.New("empty response")
 }
 
-func FindTlogEntry(rekorClient *client.Rekor, b64Sig string, payload, pubKey []byte) (string, error) {
+func FindTlogEntry(rekorClient *client.Rekor, b64Sig string, payload, pubKey []byte) (uuid string, index int64, err error) {
 	searchParams := entries.NewSearchLogQueryParams()
 	searchLogQuery := models.SearchLogQuery{}
 	signature, err := base64.StdEncoding.DecodeString(b64Sig)
 	if err != nil {
-		return "", errors.Wrap(err, "decoding base64 signature")
+		return "", 0, errors.Wrap(err, "decoding base64 signature")
 	}
 	re := rekorEntry(payload, signature, pubKey)
 	entry := &models.Rekord{
@@ -73,60 +83,74 @@ func FindTlogEntry(rekorClient *client.Rekor, b64Sig string, payload, pubKey []b
 	searchParams.SetEntry(&searchLogQuery)
 	resp, err := rekorClient.Entries.SearchLogQuery(searchParams)
 	if err != nil {
-		return "", errors.Wrap(err, "searching log query")
+		return "", 0, errors.Wrap(err, "searching log query")
 	}
 	if len(resp.Payload) == 0 {
-		return "", errors.New("signature not found in transparency log")
+		return "", 0, errors.New("signature not found in transparency log")
 	} else if len(resp.Payload) > 1 {
-		return "", errors.New("multiple entries returned; this should not happen")
+		return "", 0, errors.New("multiple entries returned; this should not happen")
 	}
 	logEntry := resp.Payload[0]
 	if len(logEntry) != 1 {
-		return "", errors.New("UUID value can not be extracted")
+		return "", 0, errors.New("UUID value can not be extracted")
 	}
 
-	params := entries.NewGetLogEntryByUUIDParams()
 	for k := range logEntry {
-		params.EntryUUID = k
+		uuid = k
 	}
+	verifiedEntry, err := VerifyTLogEntry(rekorClient, uuid)
+	if err != nil {
+		return "", 0, err
+	}
+	return uuid, *verifiedEntry.Verification.InclusionProof.LogIndex, nil
+}
+
+func VerifyTLogEntry(rekorClient *client.Rekor, uuid string) (*models.LogEntryAnon, error) {
+	params := entries.NewGetLogEntryByUUIDParams()
+	params.EntryUUID = uuid
+
 	lep, err := rekorClient.Entries.GetLogEntryByUUID(params)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	if len(lep.Payload) != 1 {
-		return "", errors.New("UUID value can not be extracted")
+		return nil, errors.New("UUID value can not be extracted")
 	}
 	e := lep.Payload[params.EntryUUID]
 
 	hashes := [][]byte{}
-	for _, h := range e.InclusionProof.Hashes {
+	for _, h := range e.Verification.InclusionProof.Hashes {
 		hb, _ := hex.DecodeString(h)
 		hashes = append(hashes, hb)
 	}
 
-	rootHash, _ := hex.DecodeString(*e.InclusionProof.RootHash)
+	rootHash, _ := hex.DecodeString(*e.Verification.InclusionProof.RootHash)
 	leafHash, _ := hex.DecodeString(params.EntryUUID)
 
 	v := logverifier.New(hasher.DefaultHasher)
-	if err := v.VerifyInclusionProof(*e.InclusionProof.LogIndex, *e.InclusionProof.TreeSize, hashes, rootHash, leafHash); err != nil {
-		return "", errors.Wrap(err, "verifying inclusion proof")
+	if e.Verification == nil || e.Verification.InclusionProof == nil {
+		return nil, fmt.Errorf("inclusion proof not provided")
 	}
-	return params.EntryUUID, nil
+	if err := v.VerifyInclusionProof(*e.Verification.InclusionProof.LogIndex, *e.Verification.InclusionProof.TreeSize, hashes, rootHash, leafHash); err != nil {
+		return nil, errors.Wrap(err, "verifying inclusion proof")
+	}
+	return &e, nil
 }
 
 // There are only payloads. Some have certs, some don't.
 type CheckOpts struct {
-	Annotations map[string]interface{}
-	Claims      bool
-	Tlog        bool
-	PubKey      PublicKey
-	Roots       *x509.CertPool
+	Annotations  map[string]interface{}
+	Claims       bool
+	VerifyBundle bool
+	Tlog         bool
+	PubKey       PublicKey
+	Roots        *x509.CertPool
 }
 
 // Verify does all the main cosign checks in a loop, returning validated payloads.
 // If there were no payloads, we return an error.
-func Verify(ctx context.Context, ref name.Reference, co CheckOpts) ([]SignedPayload, error) {
+func Verify(ctx context.Context, ref name.Reference, co *CheckOpts) ([]SignedPayload, error) {
 	// Enforce this up front.
 	if co.Roots == nil && co.PubKey == nil {
 		return nil, errors.New("one of public key or cert roots is required")
@@ -193,7 +217,13 @@ func Verify(ctx context.Context, ref name.Reference, co CheckOpts) ([]SignedPayl
 			}
 		}
 
-		if co.Tlog {
+		verified, err := sp.VerifyBundle()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Unable to verify offline (%v), checking tlog instead...", err)
+		}
+		co.VerifyBundle = verified
+
+		if co.Tlog && !verified {
 			// Get the right public key to use (key or cert)
 			var pemBytes []byte
 			if co.PubKey != nil {
@@ -205,12 +235,14 @@ func Verify(ctx context.Context, ref name.Reference, co CheckOpts) ([]SignedPayl
 			} else {
 				pemBytes = CertToPem(sp.Cert)
 			}
+
 			// Find the uuid then the entry.
-			uuid, err := sp.VerifyTlog(rekorClient, pemBytes)
+			uuid, _, err := sp.VerifyTlog(rekorClient, pemBytes)
 			if err != nil {
 				validationErrs = append(validationErrs, err.Error())
 				continue
 			}
+
 			// if we have a cert, we should check expiry
 			if sp.Cert != nil {
 				e, err := getTlogEntry(rekorClient, uuid)
@@ -265,7 +297,45 @@ func (sp *SignedPayload) VerifyClaims(d *v1.Descriptor, ss *payload.SimpleContai
 	return nil
 }
 
-func (sp *SignedPayload) VerifyTlog(rc *client.Rekor, publicKeyPem []byte) (string, error) {
+func (sp *SignedPayload) VerifyBundle() (bool, error) {
+	if sp.Bundle == nil {
+		return false, nil
+	}
+	rekorPubKey, err := PemToECDSAKey([]byte(rekorPub))
+	if err != nil {
+		return false, errors.Wrap(err, "pem to ecdsa")
+	}
+	le := &models.LogEntryAnon{
+		LogIndex:       sp.Bundle.LogIndex,
+		Body:           sp.Bundle.Body,
+		IntegratedTime: sp.Bundle.IntegratedTime,
+	}
+	contents, err := le.MarshalBinary()
+	if err != nil {
+		return false, errors.Wrap(err, "marshaling")
+	}
+	canonicalized, err := jsoncanonicalizer.Transform(contents)
+	if err != nil {
+		return false, errors.Wrap(err, "canonicalizing")
+	}
+	// verify the SET against the public key
+	hash := sha256.Sum256(canonicalized)
+	if !ecdsa.VerifyASN1(rekorPubKey, hash[:], []byte(sp.Bundle.SignedEntryTimestamp)) {
+		return false, fmt.Errorf("unable to verify")
+	}
+
+	if sp.Cert == nil {
+		return true, nil
+	}
+
+	// verify the cert against the integrated time
+	if err := checkExpiry(sp.Cert, time.Unix(sp.Bundle.IntegratedTime, 0)); err != nil {
+		return false, errors.Wrap(err, "checking expiry on cert")
+	}
+	return true, nil
+}
+
+func (sp *SignedPayload) VerifyTlog(rc *client.Rekor, publicKeyPem []byte) (uuid string, index int64, err error) {
 	return FindTlogEntry(rc, sp.Base64Signature, sp.Payload, publicKeyPem)
 }
 

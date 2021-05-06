@@ -19,6 +19,7 @@ import (
 	"context"
 	_ "crypto/sha256" // for `crypto.SHA256`
 	"encoding/base64"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -34,6 +35,9 @@ import (
 
 	"github.com/sigstore/cosign/pkg/cosign"
 	"github.com/sigstore/cosign/pkg/cosign/fulcio"
+	"github.com/sigstore/rekor/pkg/generated/models"
+
+	"github.com/sigstore/cosign/pkg/cosign/pivkey"
 	"github.com/sigstore/sigstore/pkg/signature"
 	sigPayload "github.com/sigstore/sigstore/pkg/signature/payload"
 )
@@ -68,6 +72,7 @@ func Sign() *ffcli.Command {
 		flagset     = flag.NewFlagSet("cosign sign", flag.ExitOnError)
 		key         = flagset.String("key", "", "path to the private key file or KMS URI")
 		upload      = flagset.Bool("upload", true, "whether to upload the signature")
+		sk          = flagset.Bool("sk", false, "whether to use a hardware security key")
 		payloadPath = flagset.String("payload", "", "path to a payload file to use rather than generating one.")
 		force       = flagset.Bool("f", false, "skip warnings and confirmations")
 		annotations = annotationsMap{}
@@ -90,15 +95,25 @@ EXAMPLES
   cosign sign -key cosign.pub -a key1=value1 -a key2=value2 <IMAGE>
 
   # sign a container image with a key pair stored in Google Cloud KMS
-  cosign sign -key gcpkms://projects/<PROJECT>/locations/global/keyRings/<KEYRING>/cryptoKeys/<KEY> <IMAGE>`,
+  cosign sign -key gcpkms://projects/<PROJECT>/locations/global/keyRings/<KEYRING>/cryptoKeys/<KEY>/versions/[VERSION] <IMAGE>
+  
+  # sign a container in a registry which does not fully support OCI media types
+  COSIGN_DOCKER_MEDIA_TYPES=1 cosign sign -key cosign.key legacy-registry.example.com/my/image
+  `,
 		FlagSet: flagset,
 		Exec: func(ctx context.Context, args []string) error {
 			if len(args) == 0 {
 				return flag.ErrHelp
 			}
 
+			so := SignOpts{
+				KeyRef:      *key,
+				Annotations: annotations.annotations,
+				Pf:          GetPass,
+				Sk:          *sk,
+			}
 			for _, img := range args {
-				if err := SignCmd(ctx, *key, img, *upload, *payloadPath, annotations.annotations, GetPass, *force); err != nil {
+				if err := SignCmd(ctx, so, img, *upload, *payloadPath, *force); err != nil {
 					return errors.Wrapf(err, "signing %s", img)
 				}
 			}
@@ -107,20 +122,34 @@ EXAMPLES
 	}
 }
 
-func SignCmd(ctx context.Context, keyRef string,
-	imageRef string, upload bool, payloadPath string,
-	annotations map[string]interface{}, pf cosign.PassFunc, force bool) error {
+type SignOpts struct {
+	Annotations map[string]interface{}
+	KeyRef      string
+	Sk          bool
+	Pf          cosign.PassFunc
+}
 
-	// A key file (or kms address) is required unless we're in experimental mode!
-	if keyRef == "" && !cosign.Experimental() {
-		return &KeyParseError{}
+func SignCmd(ctx context.Context, so SignOpts,
+	imageRef string, upload bool, payloadPath string, force bool) error {
+
+	// A key file or token is required unless we're in experimental mode!
+	if cosign.Experimental() {
+		if nOf(so.KeyRef, so.Sk) > 1 {
+			return &KeyParseError{}
+		}
+	} else {
+		if !oneOf(so.KeyRef, so.Sk) {
+			return &KeyParseError{}
+		}
 	}
+
+	remoteAuth := remote.WithAuthFromKeychain(authn.DefaultKeychain)
 
 	ref, err := name.ParseReference(imageRef)
 	if err != nil {
 		return errors.Wrap(err, "parsing reference")
 	}
-	get, err := remote.Get(ref, remote.WithAuthFromKeychain(authn.DefaultKeychain))
+	get, err := remote.Get(ref, remoteAuth)
 	if err != nil {
 		return errors.Wrap(err, "getting remote image")
 	}
@@ -134,7 +163,7 @@ func SignCmd(ctx context.Context, keyRef string,
 	} else {
 		payload, err = (&sigPayload.Cosign{
 			Image:       img,
-			Annotations: annotations,
+			Annotations: so.Annotations,
 		}).MarshalJSON()
 	}
 	if err != nil {
@@ -142,14 +171,24 @@ func SignCmd(ctx context.Context, keyRef string,
 	}
 
 	var signer signature.Signer
+	var dupeDetector signature.Verifier
 	var cert, chain string
-	if keyRef != "" {
-		signer, err = signerFromKeyRef(ctx, keyRef, pf)
+	switch {
+	case so.Sk:
+		sk, err := pivkey.NewSignerVerifier()
 		if err != nil {
-			return errors.Wrap(err, "getting signer from keyref")
+			return err
 		}
-	} else {
-		// Keyless!
+		signer = sk
+		dupeDetector = sk
+	case so.KeyRef != "":
+		k, err := signerVerifierFromKeyRef(ctx, so.KeyRef, so.Pf)
+		if err != nil {
+			return errors.Wrap(err, "reading key")
+		}
+		signer = k
+		dupeDetector = k
+	default: // Keyless!
 		fmt.Fprintln(os.Stderr, "Generating ephemeral keys...")
 		k, err := fulcio.NewSigner(ctx)
 		if err != nil {
@@ -175,12 +214,16 @@ func SignCmd(ctx context.Context, keyRef string,
 		return err
 	}
 	fmt.Fprintln(os.Stderr, "Pushing signature to:", dstRef.String())
-	if err := cosign.Upload(sig, payload, dstRef, string(cert), string(chain)); err != nil {
-		return err
+	uo := cosign.UploadOpts{
+		Cert:         string(cert),
+		Chain:        string(chain),
+		DupeDetector: dupeDetector,
+		RemoteOpts:   []remote.Option{remoteAuth},
 	}
 
 	if !cosign.Experimental() {
-		return nil
+		_, err := cosign.Upload(ctx, sig, payload, dstRef, uo)
+		return err
 	}
 
 	// Check if the image is public (no auth in Get)
@@ -209,10 +252,41 @@ func SignCmd(ctx context.Context, keyRef string,
 		}
 		rekorBytes = pemBytes
 	}
-	index, err := cosign.UploadTLog(sig, payload, rekorBytes)
+	entry, err := cosign.UploadTLog(sig, payload, rekorBytes)
 	if err != nil {
 		return err
 	}
-	fmt.Println("tlog entry created with index: ", index)
+	fmt.Println("tlog entry created with index: ", *entry.LogIndex)
+
+	bund, err := bundle(entry)
+	if err != nil {
+		return errors.Wrap(err, "bundle")
+	}
+	uo.Bundle = bund
+	uo.AdditionalAnnotations = annotations(entry)
+	if _, err = cosign.Upload(ctx, sig, payload, dstRef, uo); err != nil {
+		return errors.Wrap(err, "uploading")
+	}
 	return nil
+}
+
+func bundle(entry *models.LogEntryAnon) (*cosign.Bundle, error) {
+	if entry.Verification == nil {
+		return nil, nil
+	}
+	return &cosign.Bundle{
+		SignedEntryTimestamp: entry.Verification.SignedEntryTimestamp,
+		Body:                 entry.Body,
+		IntegratedTime:       entry.IntegratedTime,
+		LogIndex:             entry.LogIndex,
+	}, nil
+}
+
+func annotations(entry *models.LogEntryAnon) map[string]string {
+	annts := map[string]string{}
+	if bund, err := bundle(entry); err == nil && bund != nil {
+		contents, _ := json.Marshal(bund)
+		annts[cosign.BundleKey] = string(contents)
+	}
+	return annts
 }

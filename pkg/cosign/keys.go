@@ -30,7 +30,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/go-piv/piv-go/piv"
 	"github.com/pkg/errors"
 	"github.com/theupdateframework/go-tuf/encrypted"
 
@@ -39,10 +38,11 @@ import (
 )
 
 const (
-	pemType  = "ENCRYPTED COSIGN PRIVATE KEY"
-	sigkey   = "dev.cosignproject.cosign/signature"
-	certkey  = "dev.sigstore.cosign/certificate"
-	chainkey = "dev.sigstore.cosign/chain"
+	PemType   = "ENCRYPTED COSIGN PRIVATE KEY"
+	sigkey    = "dev.cosignproject.cosign/signature"
+	certkey   = "dev.sigstore.cosign/certificate"
+	chainkey  = "dev.sigstore.cosign/chain"
+	BundleKey = "dev.sigstore.cosign/bundle"
 )
 
 type PassFunc func(bool) ([]byte, error)
@@ -79,7 +79,7 @@ func GenerateKeyPair(pf PassFunc) (*Keys, error) {
 
 	privBytes := pem.EncodeToMemory(&pem.Block{
 		Bytes: encBytes,
-		Type:  "ENCRYPTED COSIGN PRIVATE KEY",
+		Type:  PemType,
 	})
 
 	// Now do the public key
@@ -126,7 +126,7 @@ func LoadECDSAPrivateKey(key []byte, pass []byte) (signature.ECDSASignerVerifier
 	if p == nil {
 		return signature.ECDSASignerVerifier{}, errors.New("invalid pem block")
 	}
-	if p.Type != pemType {
+	if p.Type != PemType {
 		return signature.ECDSASignerVerifier{}, fmt.Errorf("unsupported pem type: %s", p.Type)
 	}
 
@@ -144,38 +144,6 @@ func LoadECDSAPrivateKey(key []byte, pass []byte) (signature.ECDSASignerVerifier
 		return signature.ECDSASignerVerifier{}, fmt.Errorf("invalid private key")
 	}
 	return signature.NewECDSASignerVerifier(epk, crypto.SHA256), nil
-}
-func GetYubikey() (*piv.YubiKey, error) {
-	cards, err := piv.Cards()
-	if err != nil {
-		return nil, err
-	}
-
-	// Find a YubiKey and open the reader.
-	var yk *piv.YubiKey
-	for _, card := range cards {
-		if strings.Contains(strings.ToLower(card), "yubikey") {
-			if yk, err = piv.Open(card); err != nil {
-				return nil, err
-			}
-			return yk, nil
-		}
-	}
-	return nil, errors.New("no yubikey found")
-}
-
-func GenYubikey(yk *piv.YubiKey) (crypto.PublicKey, error) {
-	// Generate a private key on the YubiKey.
-	key := piv.Key{
-		Algorithm:   piv.AlgorithmEC256,
-		PINPolicy:   piv.PINPolicyAlways,
-		TouchPolicy: piv.TouchPolicyAlways,
-	}
-	pub, err := yk.GenerateKey(piv.DefaultManagementKey, piv.SlotSignature, key)
-	if err != nil {
-		return nil, err
-	}
-	return pub, nil
 }
 
 const pubKeyPemType = "PUBLIC KEY"
@@ -211,6 +179,14 @@ func LoadPublicKey(ctx context.Context, keyRef string) (pub PublicKey, err error
 	}
 
 	// PEM encoded file.
+	ed, err := PemToECDSAKey(raw)
+	if err != nil {
+		return nil, errors.Wrap(err, "pem to ecdsa")
+	}
+	return signature.ECDSAVerifier{Key: ed, HashAlg: crypto.SHA256}, nil
+}
+
+func PemToECDSAKey(raw []byte) (*ecdsa.PublicKey, error) {
 	p, _ := pem.Decode(raw)
 	if p == nil {
 		return nil, errors.New("pem.Decode failed")
@@ -225,7 +201,7 @@ func LoadPublicKey(ctx context.Context, keyRef string) (pub PublicKey, err error
 	}
 	ed, ok := decoded.(*ecdsa.PublicKey)
 	if !ok {
-		return nil, fmt.Errorf("invalid public key: was %T, require *ecdsa.PublicKey", pub)
+		return nil, fmt.Errorf("invalid public key: was %T, require *ecdsa.PublicKey", raw)
 	}
-	return signature.ECDSAVerifier{Key: ed, HashAlg: crypto.SHA256}, nil
+	return ed, nil
 }
