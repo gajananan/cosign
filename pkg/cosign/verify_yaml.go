@@ -80,7 +80,7 @@ func VerifyYaml(ctx context.Context, co CheckOpts, payloadPath string) ([]Signed
 				pemBytes = CertToPem(sp.Cert)
 			}
 			// Find the uuid then the entry.
-			uuid, err := sp.VerifyTlog(rekorClient, pemBytes)
+			uuid, _, err := sp.VerifyTlog(rekorClient, pemBytes)
 			if err != nil {
 				validationErrs = append(validationErrs, err.Error())
 				continue
