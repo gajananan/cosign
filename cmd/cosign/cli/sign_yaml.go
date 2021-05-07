@@ -16,9 +16,8 @@
 package cli
 
 import (
-	"bytes"
-	"compress/gzip"
 	"context"
+	_ "crypto/sha256" // for `crypto.SHA256`
 	"encoding/base64"
 	"flag"
 	"fmt"
@@ -33,6 +32,8 @@ import (
 
 	"github.com/sigstore/cosign/pkg/cosign"
 	"github.com/sigstore/cosign/pkg/cosign/fulcio"
+
+	"github.com/sigstore/cosign/pkg/cosign/pivkey"
 	"github.com/sigstore/sigstore/pkg/signature"
 )
 
@@ -40,27 +41,24 @@ import (
 type SignYamlCommand struct {
 	Upload      bool
 	KeyRef      string
-	KmsVal      string
+	Sk          bool
 	Annotations *map[string]interface{}
 	PayloadPath string
 	Pf          cosign.PassFunc
 }
 
-// Verify builds and returns an ffcli command
 func SignYaml() *ffcli.Command {
+
 	cmd := SignYamlCommand{}
 	flagset := flag.NewFlagSet("cosign sign-yaml", flag.ExitOnError)
 	annotations := annotationsMap{}
 
 	flagset.StringVar(&cmd.KeyRef, "key", "", "path to the public key file, URL, or KMS URI")
-	flagset.StringVar(&cmd.KmsVal, "kms", "", "sign via a private key stored in a KMS")
+	flagset.BoolVar(&cmd.Sk, "sk", false, "whether to use a hardware security key")
 	flagset.BoolVar(&cmd.Upload, "upload", true, "whether to upload the signature")
 	flagset.StringVar(&cmd.PayloadPath, "payload", "", "path to the yaml file")
 
-	// parse annotations
 	flagset.Var(&annotations, "a", "extra key=value pairs to sign")
-	cmd.Annotations = &annotations.annotations
-
 	return &ffcli.Command{
 		Name:       "sign-yaml",
 		ShortUsage: "cosign sign-yaml -key <key path>|<kms uri> [-payload <path>] [-a key=value] [-upload=true|false] [-f] <image uri>",
@@ -82,14 +80,27 @@ EXAMPLES
 		FlagSet: flagset,
 		Exec:    cmd.Exec,
 	}
+
 }
 
-// Exec runs the verification command
 func (c *SignYamlCommand) Exec(ctx context.Context, args []string) error {
+
+	// A key file or token is required unless we're in experimental mode!
+	if cosign.Experimental() {
+		if nOf(c.KeyRef, c.Sk) > 1 {
+			return &KeyParseError{}
+		}
+	} else {
+		if !oneOf(c.KeyRef, c.Sk) {
+			return &KeyParseError{}
+		}
+	}
+
+	//remoteAuth := remote.WithAuthFromKeychain(authn.DefaultKeychain)
 
 	keyRef := c.KeyRef
 	payloadPath := c.PayloadPath
-	pf := c.Pf
+	//pf := c.Pf
 	// The payload can be specified via a flag to skip generation.
 	var payload []byte
 	var payloadYaml []byte
@@ -102,38 +113,40 @@ func (c *SignYamlCommand) Exec(ctx context.Context, args []string) error {
 	}
 
 	var signer signature.Signer
-
+	//var dupeDetector signature.Verifier
 	var cert string
-
-	var sig []byte
 	var pemBytes []byte
-
-	if keyRef != "" {
-		k, err := signerVerifierFromKeyRef(ctx, keyRef, pf)
+	switch {
+	case c.Sk:
+		sk, err := pivkey.NewSignerVerifier()
+		if err != nil {
+			return err
+		}
+		signer = sk
+		//dupeDetector = sk
+		pemBytes, err = cosign.PublicKeyPem(ctx, sk)
+		if err != nil {
+			return err
+		}
+	case c.KeyRef != "":
+		k, err := signerVerifierFromKeyRef(ctx, c.KeyRef, c.Pf)
 		if err != nil {
 			return errors.Wrap(err, "reading key")
 		}
 		signer = k
-
-		pemBytes, err = cosign.PublicKeyPem(ctx, k)
-		if err != nil {
-			return err
-		}
-	} else {
-		// Keyless!
-
+		//dupeDetector = k
+	default: // Keyless!
 		fmt.Fprintln(os.Stderr, "Generating ephemeral keys...")
 		k, err := fulcio.NewSigner(ctx)
 		if err != nil {
 			return errors.Wrap(err, "getting key from Fulcio")
 		}
 		signer = k
-		cert = k.Cert
-
+		cert, _ = k.Cert, k.Chain
 		pemBytes = []byte(cert)
 	}
 
-	sig, _, err = signer.Sign(ctx, payload)
+	sig, _, err := signer.Sign(ctx, payload)
 	if err != nil {
 		return errors.Wrap(err, "signing")
 	}
@@ -174,10 +187,10 @@ func (c *SignYamlCommand) Exec(ctx context.Context, args []string) error {
 	sigAnnoKey := cosign.IntegrityShieldAnnotationSignature
 	certAnnoKey := cosign.IntegrityShieldAnnotationCertificate
 	mAnnotationMap[sigAnnoKey] = base64.StdEncoding.EncodeToString(sig)
-	mAnnotationMap[msgAnnoKey] = base64.StdEncoding.EncodeToString(gzipCompress(payloadYaml))
+	mAnnotationMap[msgAnnoKey] = base64.StdEncoding.EncodeToString(payloadYaml)
 
 	if keyRef == "" {
-		mAnnotationMap[certAnnoKey] = base64.StdEncoding.EncodeToString(gzipCompress(pemBytes))
+		mAnnotationMap[certAnnoKey] = base64.StdEncoding.EncodeToString(pemBytes)
 	}
 	m["metadata"].(map[interface{}]interface{})["annotations"] = mAnnotationMap
 
@@ -194,9 +207,25 @@ func (c *SignYamlCommand) Exec(ctx context.Context, args []string) error {
 		panic(err)
 	}
 
-	if !cosign.Experimental() {
-		return nil
-	}
+	/*
+		// sha256:... -> sha256-...
+		dstRef, err := cosign.DestinationRef(ref, get)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(os.Stderr, "Pushing signature to:", dstRef.String())
+		uo := cosign.UploadOpts{
+				Cert:         string(cert),
+				Chain:        string(chain),
+				DupeDetector: dupeDetector,
+				RemoteOpts:   []remote.Option{remoteAuth},
+			}
+
+		if !cosign.Experimental() {
+			_, err := cosign.Upload(ctx, sig, payload, dstRef, uo)
+			return err
+		}
+	*/
 
 	// Upload the cert or the public key, depending on what we have
 	var rekorBytes []byte
@@ -215,15 +244,39 @@ func (c *SignYamlCommand) Exec(ctx context.Context, args []string) error {
 		return err
 	}
 	fmt.Println("tlog entry created with index: ", *entry.LogIndex)
-
+	/*
+		bund, err := bundle(entry)
+		if err != nil {
+			return errors.Wrap(err, "bundle")
+		}
+			uo.Bundle = bund
+			uo.AdditionalAnnotations = annotations(entry)
+			if _, err = cosign.Upload(ctx, sig, payload, dstRef, uo); err != nil {
+				return errors.Wrap(err, "uploading")
+			}
+	*/
 	return nil
 }
 
-func gzipCompress(in []byte) []byte {
-	var buffer bytes.Buffer
-	writer := gzip.NewWriter(&buffer)
-	writer.Write(in)
-	writer.Close()
-	b := buffer.Bytes()
-	return b
+/*
+func bundle(entry *models.LogEntryAnon) (*cosign.Bundle, error) {
+	if entry.Verification == nil {
+		return nil, nil
+	}
+	return &cosign.Bundle{
+		SignedEntryTimestamp: entry.Verification.SignedEntryTimestamp,
+		Body:                 entry.Body,
+		IntegratedTime:       entry.IntegratedTime,
+		LogIndex:             entry.LogIndex,
+	}, nil
 }
+
+func annotations(entry *models.LogEntryAnon) map[string]string {
+	annts := map[string]string{}
+	if bund, err := bundle(entry); err == nil && bund != nil {
+		contents, _ := json.Marshal(bund)
+		annts[cosign.BundleKey] = string(contents)
+	}
+	return annts
+}
+*/

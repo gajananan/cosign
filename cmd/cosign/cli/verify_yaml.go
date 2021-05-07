@@ -27,6 +27,7 @@ import (
 
 	"github.com/sigstore/cosign/pkg/cosign"
 	"github.com/sigstore/cosign/pkg/cosign/fulcio"
+	"github.com/sigstore/cosign/pkg/cosign/pivkey"
 	"github.com/sigstore/sigstore/pkg/signature/payload"
 )
 
@@ -34,7 +35,7 @@ import (
 type VerifyYamlCommand struct {
 	CheckClaims bool
 	KeyRef      string
-	KmsVal      string
+	Sk          bool
 	Output      string
 	Annotations *map[string]interface{}
 	PayloadPath string
@@ -48,11 +49,12 @@ func VerifyYaml() *ffcli.Command {
 	annotations := annotationsMap{}
 
 	flagset.StringVar(&cmd.KeyRef, "key", "", "path to the public key file, URL, or KMS URI")
-	flagset.StringVar(&cmd.KmsVal, "kms", "", "sign via a private key stored in a KMS")
+	flagset.BoolVar(&cmd.Sk, "sk", false, "whether to use a hardware security key")
 	flagset.BoolVar(&cmd.CheckClaims, "check-claims", true, "whether to check the claims found")
 	flagset.StringVar(&cmd.Output, "output", "json", "output the signing image information. Default JSON.")
 	flagset.StringVar(&cmd.PayloadPath, "payload", "", "path to the yaml file")
 	flagset.BoolVar(&cmd.Yaml, "yaml", true, "if it is yaml file")
+
 	// parse annotations
 	flagset.Var(&annotations, "a", "extra key=value pairs to sign")
 	cmd.Annotations = &annotations.annotations
@@ -85,22 +87,20 @@ EXAMPLES
 		FlagSet: flagset,
 		Exec:    cmd.Exec,
 	}
+
 }
 
 // Exec runs the verification command
 func (c *VerifyYamlCommand) Exec(ctx context.Context, args []string) error {
 
-	co := cosign.CheckOpts{
+	co := &cosign.CheckOpts{
 		Annotations: *c.Annotations,
 		Claims:      c.CheckClaims,
 		Tlog:        cosign.Experimental(),
 		Roots:       fulcio.Roots,
 	}
-
 	keyRef := c.KeyRef
-	if c.KmsVal != "" {
-		keyRef = c.KmsVal
-	}
+
 	// Keys are optional!
 	if keyRef != "" {
 		pubKey, err := publicKeyFromKeyRef(ctx, keyRef)
@@ -108,7 +108,14 @@ func (c *VerifyYamlCommand) Exec(ctx context.Context, args []string) error {
 			return errors.Wrap(err, "loading public key")
 		}
 		co.PubKey = pubKey
+	} else if c.Sk {
+		pubKey, err := pivkey.NewPublicKeyProvider()
+		if err != nil {
+			return errors.Wrap(err, "loading public key")
+		}
+		co.PubKey = pubKey
 	}
+
 	verified, err := cosign.VerifyYaml(ctx, co, c.PayloadPath)
 	if err != nil {
 		return err
@@ -120,7 +127,7 @@ func (c *VerifyYamlCommand) Exec(ctx context.Context, args []string) error {
 }
 
 // printVerification logs details about the verification to stdout
-func (c *VerifyYamlCommand) printVerification(imgRef string, verified []cosign.SignedPayload, co cosign.CheckOpts) {
+func (c *VerifyYamlCommand) printVerification(imgRef string, verified []cosign.SignedPayload, co *cosign.CheckOpts) {
 	fmt.Fprintf(os.Stderr, "\nVerification for %s --\n", c.PayloadPath)
 	fmt.Fprintln(os.Stderr, "The following checks were performed on each of these signatures:")
 	if co.Claims {
@@ -129,7 +136,9 @@ func (c *VerifyYamlCommand) printVerification(imgRef string, verified []cosign.S
 		}
 		fmt.Fprintln(os.Stderr, "  - The cosign claims were validated")
 	}
-	if co.Tlog {
+	if co.VerifyBundle {
+		fmt.Fprintln(os.Stderr, "  - Existence of the claims in the transparency log was verified offline")
+	} else if co.Tlog {
 		fmt.Fprintln(os.Stderr, "  - The claims were present in the transparency log")
 		fmt.Fprintln(os.Stderr, "  - The signatures were integrated into the transparency log when the certificate was valid")
 	}
@@ -162,6 +171,12 @@ func (c *VerifyYamlCommand) printVerification(imgRef string, verified []cosign.S
 					ss.Optional = make(map[string]interface{})
 				}
 				ss.Optional["CommonName"] = vp.Cert.Subject.CommonName
+			}
+			if vp.Bundle != nil {
+				if ss.Optional == nil {
+					ss.Optional = make(map[string]interface{})
+				}
+				ss.Optional["Bundle"] = vp.Bundle
 			}
 
 			outputKeys = append(outputKeys, ss)
