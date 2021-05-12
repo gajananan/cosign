@@ -106,8 +106,49 @@ func (c *SignYamlCommand) Exec(ctx context.Context, args []string) error {
 	var payloadYaml []byte
 
 	payloadYaml, err := ioutil.ReadFile(filepath.Clean(payloadPath))
-	payload, _ = gyaml.YAMLToJSON(payloadYaml)
 
+	mPayload := make(map[interface{}]interface{})
+	err = yaml.Unmarshal([]byte(payloadYaml), &mPayload)
+	if err != nil {
+		fmt.Errorf("error: %v", err)
+	}
+	mPayloadMeta, ok := mPayload["metadata"]
+	if !ok {
+		return fmt.Errorf("there is no `metadata` in this payload")
+	}
+	mPayloadMetaMap, ok := mPayloadMeta.(map[interface{}]interface{})
+	if !ok {
+		return fmt.Errorf("`metadata` in this payload is not a yaml object")
+	}
+	mPayloadAnnotation, ok := mPayloadMetaMap["annotations"]
+	if !ok {
+		mPayloadAnnotation = make(map[interface{}]interface{})
+	}
+
+	mPayloadAnnotationMap, ok := mPayloadAnnotation.(map[interface{}]interface{})
+	if !ok {
+		return fmt.Errorf("`metadata.annotations` in this payload is not a yaml object")
+	}
+
+	msgAnnoKey := cosign.IntegrityShieldAnnotationMessage
+	sigAnnoKey := cosign.IntegrityShieldAnnotationSignature
+	certAnnoKey := cosign.IntegrityShieldAnnotationCertificate
+
+	delete(mPayloadAnnotationMap, msgAnnoKey)
+	delete(mPayloadAnnotationMap, sigAnnoKey)
+	delete(mPayloadAnnotationMap, certAnnoKey)
+
+	if len(mPayloadAnnotationMap) == 0 {
+		delete(mPayload["metadata"].(map[interface{}]interface{}), "annotations")
+	} else {
+		mPayload["metadata"].(map[interface{}]interface{})["annotations"] = mPayloadAnnotationMap
+	}
+
+	cleanPayloadYaml, err := yaml.Marshal(mPayload)
+
+	payload, _ = gyaml.YAMLToJSON(cleanPayloadYaml)
+	fmt.Println("payload")
+	fmt.Println(string(payload))
 	if err != nil {
 		return errors.Wrap(err, "payload")
 	}
@@ -162,7 +203,7 @@ func (c *SignYamlCommand) Exec(ctx context.Context, args []string) error {
 
 	m := make(map[interface{}]interface{})
 
-	err = yaml.Unmarshal([]byte(payloadYaml), &m)
+	err = yaml.Unmarshal([]byte(cleanPayloadYaml), &m)
 	if err != nil {
 		fmt.Errorf("error: %v", err)
 	}
@@ -183,11 +224,8 @@ func (c *SignYamlCommand) Exec(ctx context.Context, args []string) error {
 		return fmt.Errorf("`metadata.annotations` in this payload is not a yaml object")
 	}
 
-	msgAnnoKey := cosign.IntegrityShieldAnnotationMessage
-	sigAnnoKey := cosign.IntegrityShieldAnnotationSignature
-	certAnnoKey := cosign.IntegrityShieldAnnotationCertificate
 	mAnnotationMap[sigAnnoKey] = base64.StdEncoding.EncodeToString(sig)
-	mAnnotationMap[msgAnnoKey] = base64.StdEncoding.EncodeToString(payloadYaml)
+	mAnnotationMap[msgAnnoKey] = base64.StdEncoding.EncodeToString(cleanPayloadYaml)
 
 	if keyRef == "" {
 		mAnnotationMap[certAnnoKey] = base64.StdEncoding.EncodeToString(pemBytes)

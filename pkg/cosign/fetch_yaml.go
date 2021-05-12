@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"path/filepath"
-	"strings"
 
 	gyaml "github.com/ghodss/yaml"
 	"gopkg.in/yaml.v2"
@@ -63,13 +62,16 @@ func FetchYamlSignatures(ctx context.Context, payloadPath string) ([]SignedPaylo
 			return nil, fmt.Errorf("`metadata.annotations` in this payload is not a yaml object")
 		}
 
-		//msgAnnoKey := IntegrityShieldAnnotationMessage
+		msgAnnoKey := IntegrityShieldAnnotationMessage
 		sigAnnoKey := IntegrityShieldAnnotationSignature
 		certAnnoKey := IntegrityShieldAnnotationCertificate
 
-		payloadOrigPath := strings.TrimRight(payloadPath, ".signed")
-		payloadOrigYaml, err := ioutil.ReadFile(filepath.Clean(payloadOrigPath))
-		payloadOrig, _ := gyaml.YAMLToJSON(payloadOrigYaml)
+		//payloadOrigPath := strings.TrimRight(payloadPath, ".signed")
+		//payloadOrigYaml, err := ioutil.ReadFile(filepath.Clean(payloadOrigPath))
+
+		//payloadOrig, _ := gyaml.YAMLToJSON(payloadOrigYaml)
+		decodedMsg, _ := base64.StdEncoding.DecodeString(mAnnotationMap[msgAnnoKey].(string))
+		payloadOrig, _ := gyaml.YAMLToJSON(decodedMsg)
 		base64sig := fmt.Sprint(mAnnotationMap[sigAnnoKey])
 
 		sp := SignedPayload{
