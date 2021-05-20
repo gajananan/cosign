@@ -1,4 +1,4 @@
-module github.com/sigstore/cosign
+module github.com/gajananan/cosign
 
 go 1.16
 
